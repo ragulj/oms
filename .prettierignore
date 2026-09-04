@@ -1,0 +1,10 @@
+node_modules/
+dist/
+drizzle/
+coverage/
+data/
+package-lock.json
+specs/
+.specify/
+.claude/
+README.md

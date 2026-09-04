@@ -207,6 +207,12 @@ means diverging from the NestJS default toolchain for a suite whose runtime budg
 under 2 minutes) is not under threat. The speed advantage is spending complexity to solve a
 problem this project does not have.
 
+**Amended 2026-09-05 during implementation**: Jest must be launched with
+`--experimental-vm-modules` because NestJS 12 is ESM-only. See R9. Vitest would not have needed
+this, which is a point in its favour that was not visible when this decision was made. It does
+not reverse the decision: the measured suite runs in about 12 seconds against a 2-minute
+budget, so the cost is one flag rather than an ongoing problem.
+
 ---
 
 ## R5: Migration tooling can satisfy Constitution IV
@@ -272,6 +278,42 @@ is generous by orders of magnitude while still making a hang obvious.
 
 ---
 
+## R9: NestJS 12 is ESM-only
+
+**Decision: keep the project CommonJS; run Jest under `--experimental-vm-modules`.**
+Discovered during implementation on 2026-09-05, not during Phase 0.
+
+Every `@nestjs/*` package at v12 declares `"type": "module"`, verified by reading
+`node_modules/@nestjs/{common,core,testing,platform-express,schedule}/package.json`. There is
+no CommonJS build.
+
+**Why this did not surface earlier.** The Phase 0 probe compiled a NestJS module to CommonJS
+and ran it with plain `node`, which succeeded. Node 24 supports `require(esm)` natively
+(`process.features.require_module === true`), so a CommonJS build importing an ESM package
+works at runtime. The probe was correct and the conclusion drawn from it was correct. It was
+simply not the whole surface.
+
+**Where it does bite.** Jest maintains its own module registry and gates `require(esm)` behind
+two conditions in `jest-runtime`: `supportsSyncEvaluate` (Node 24.9+ **and** VM modules
+enabled) and `shouldLoadAsEsm`. Without the flag, 9 of 18 test suites failed to load with
+`Must use import to load ES Module`.
+
+**Resolution**: the test command is
+`node --experimental-vm-modules node_modules/jest/bin/jest.js`, invoked that way rather than
+through `cross-env` so it works identically on Windows and POSIX with no extra dependency.
+
+**Alternatives considered**:
+
+| Alternative | Rejected because |
+|-------------|-------------------|
+| Convert the project to ESM (`"type": "module"`) | Larger change, and ESM plus `experimentalDecorators` plus ts-jest is a more fragile combination than one Node flag |
+| `transformIgnorePatterns` to transpile `@nestjs/*` to CommonJS | Transforming `node_modules` on every run is slow and fragile |
+| Downgrade to NestJS 11 | Trades a working flag for an older framework and unknown other differences |
+
+**Note for later specs**: this is the same class of surface as R2's untested `ts-jest`
+compatibility. Any new tool with its own module loader (a coverage reporter, a different test
+runner, a bundler) needs checking against ESM-only NestJS before adoption.
+
 ## Open questions carried out of Phase 0
 
 | # | Question | Why it is unresolved | How to resolve |
@@ -303,3 +345,4 @@ with no domain endpoint would produce an untestable acceptance criterion.
 | TypeScript 7 breaks NestJS decorator metadata | **Void** | n/a | Disproven by experiment; TS 5.9.3 selected on ergonomics instead |
 | A future platform target has no prebuilt binary | **Live** | Install fails on that platform | Option C in R1 is the fallback that preserves real SQLite |
 | `ts-jest` compatibility with TS 7 never tested | **Live but dormant** | Would matter only if the project later moves to TS 7 | Test before any TS 7 migration; FR-016 depends on it |
+| A tool with its own module loader cannot require ESM-only NestJS | **Live, and it already fired once** | Cost 9 of 18 suites until the Jest flag was added (R9) | Check any new runner, bundler, or coverage tool against ESM-only NestJS before adopting it |

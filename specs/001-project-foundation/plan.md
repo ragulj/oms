@@ -45,6 +45,12 @@ document, and Jest preset. On a project whose purpose is a low-friction foundati
 more than the faster compiler returns. TS 7 with `nodenext/nodenext` compiles cleanly and
 remains the configuration to use if the project later migrates.
 
+**Module format**: the project emits **CommonJS**, while **NestJS 12 is ESM-only** (every
+`@nestjs/*` package declares `"type": "module"`). These coexist because Node 24 supports
+`require(esm)` natively, so a CommonJS build importing an ESM package works. Discovered during
+implementation, not planning, and written up as R9 in research.md. The one place it bites is
+any tool with its own module loader.
+
 **Primary Dependencies**: Resolved from the registry on 2026-09-05.
 
 | Package | Version | Note |
@@ -72,6 +78,11 @@ clarified on 2026-09-05), against a real file-backed throwaway database created 
 removed when the run ends (FR-018). Per-test cleanup uses `DELETE FROM` rather than
 `TRUNCATE`, which SQLite does not have (Constitution VI). A run matching zero tests must exit
 non-zero (FR-019).
+
+Jest is launched as `node --experimental-vm-modules node_modules/jest/bin/jest.js` rather than
+as a bare `jest`. Its module registry gates `require(esm)` behind that flag, and without it
+every suite touching a NestJS import fails to load. Invoking Node directly rather than through
+`cross-env` keeps the command identical on Windows and POSIX with no extra dependency.
 
 **Target Platform**: Node.js service. No browser, mobile, or desktop surface. Development host
 verified as Windows 11 on `win32-x64`. **Python is not on PATH**, so `node-gyp` cannot compile

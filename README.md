@@ -18,6 +18,54 @@ I chose Node without any rigid criteria. In the real world, picking a stack requ
 
 This README will act as a living document. As development progresses, I will log all architectural tradeoffs, out-of-scope decisions, and any specific challenges faced while using the AI spec-kit right here.
 
+## Getting Started
+
+Requires **Node 22 or newer**. That floor is derived rather than pinned: it is the highest
+minimum any direct dependency declares, and `better-sqlite3` sets it at 22, above NestJS at 20.
+The service refuses to start on anything lower rather than failing obscurely later.
+
+```bash
+npm install
+cp .env.example .env
+npm run db:migrate
+npm run start:dev
+```
+
+Then check `http://localhost:3000/health`. No database server to install and no C++ toolchain
+required: the SQLite driver ships prebuilt binaries.
+
+### Commands
+
+| Command | What it does |
+| :--- | :--- |
+| `npm install` | Install dependencies |
+| `npm run start:dev` | Run the service from TypeScript sources |
+| `npm run build` | Compile to `dist/` |
+| `npm run start:prod` | Run the compiled build |
+| `npm run db:generate` | Generate a migration from the Drizzle schema |
+| `npm run db:migrate` | Apply pending migrations |
+| `npm test` | Run the integration suite against a real database |
+| `npm run check` | Format, lint, and type check. Non-zero exit on any violation |
+| `npm run fix` | Correct what can be corrected mechanically |
+
+### Configuration
+
+Every setting the service recognises is listed in `.env.example`. All of them are validated at
+startup, before traffic is accepted or work is scheduled, and a missing or malformed value
+exits non-zero naming the offender.
+
+`DATABASE_PATH` is required. `PORT`, `LOG_LEVEL`, `SCHEDULER_INTERVAL_MS`, and
+`SHUTDOWN_DRAIN_TIMEOUT_MS` default to 3000, `info`, five minutes, and ten seconds.
+
+### Two deliberate behaviours worth knowing
+
+**Migrations are never applied at startup.** The service refuses to boot while any migration is
+pending and names it. On a single-writer engine, two processes racing to migrate on boot is a
+real hazard, so applying them is always an explicit command.
+
+**Logs are structured in every environment**, with no pretty-printing branch, so what a test
+asserts on is exactly what you read. Pipe through a formatter locally if you want colour.
+
 ## Architectural Decisions and AI Workflow Log
 
 Where I overrode the AI's first instinct, and why.
