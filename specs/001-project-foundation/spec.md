@@ -17,6 +17,11 @@
 - Q: What URL convention should the service use for its routes, given that the health check is the first one and sets the precedent? → A: Domain routes under a versioned prefix; the health check on a stable unversioned path, so supervisors and uptime probes are unaffected by API version changes.
 - Q: What should the health check return when the service is running but its database is unreachable? → A: A single endpoint that succeeds only when service and database are both healthy, and otherwise returns a failure status with a body naming the failing dependency. No separate liveness/readiness split, since the declared scope has no orchestrator to serve.
 - Q: What format and verbosity should the service's log output use? → A: Machine-parseable structured records on standard output, in the same format in every environment, at a configurable level. Developers pipe through a formatter locally rather than the service maintaining a second output path.
+- Q: What should the service do at startup when the database has migrations that have not been applied yet? → A: Refuse to start, exiting non-zero and naming the pending migrations. Migrations are applied only by the explicit documented command, never automatically during startup.
+- Q: What should the default interval be for the placeholder scheduled task? → A: Five minutes, matching the constitution's cadence for the future order promotion job, so the placeholder rehearses the real timing. Automated verification overrides the interval through configuration rather than waiting on the default.
+- Q: How long should the shutdown drain be allowed to run before the service force-exits? → A: Ten seconds by default, configurable. Far longer than any work spec 001 can produce, short enough that a hung shutdown is obvious. Container grace-period conventions were rejected as importing a constraint from a deployment model this spec puts out of scope.
+- Q: How should the project decide the minimum Node version it documents and enforces? → A: A derived floor, taken as the highest minimum required by any direct dependency and recomputed whenever dependencies change. Today that is Node 20, set by the application framework. A pinned number was rejected because it goes stale silently, which is the failure FR-003 exists to prevent.
+- Q: Should the two-minute verification budget be an enforced build gate, or a stated target that never fails the build? → A: An advisory target. The unquantified hardware qualifier is dropped and timing never fails the build, because wall-clock gates go red for reasons unrelated to the code and erode the credibility of the gates that matter.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -77,6 +82,9 @@ and confirm it reports nothing to do.
    commit.
 4. **Given** two developers on different machines, **When** both apply all migrations from
    empty, **Then** both arrive at an identical schema.
+5. **Given** a database with migrations still pending, **When** the service is started,
+   **Then** it exits non-zero before accepting any request and the message names the pending
+   migrations.
 
 ---
 
@@ -189,6 +197,8 @@ confirm the recurring task left observable evidence each time it ran.
 
 - What happens when a required setting is missing, empty, or the wrong type at startup?
 - What happens when the migration command runs against a database that is already current?
+- What happens when the service starts against a database whose applied migrations are ahead
+  of what the running code knows about, such as after a rollback of the application?
 - What happens when the database file path points to a directory that does not exist or is
   not writable?
 - What happens when the database becomes unreachable after a successful startup, given that
@@ -218,7 +228,11 @@ confirm the recurring task left observable evidence each time it ran.
 - **FR-002**: Every documented command MUST succeed on a clean clone with no manual step
   beyond those written in the documentation.
 - **FR-003**: The documentation MUST state the minimum runtime version required, and the
-  project MUST refuse to run on an unsupported version rather than failing obscurely.
+  project MUST refuse to run on an unsupported version rather than failing obscurely. That
+  minimum MUST be derived as the highest floor required by any direct dependency, and MUST be
+  recomputed whenever dependencies change, so the documented number cannot drift below what
+  the dependency graph actually demands. At the time of writing the binding constraint is the
+  application framework's declared engine requirement.
 - **FR-004**: A developer MUST be able to reach a running, healthy service using only the
   documented commands, without editing source files.
 
@@ -247,7 +261,11 @@ confirm the recurring task left observable evidence each time it ran.
 - **FR-014**: All persistence access MUST go through the single approved data access layer.
   No second access path may exist.
 - **FR-015**: The service MUST fail to start, with a clear message, when the configured
-  database location is unreachable or not writable.
+  database location is unreachable or not writable, and equally when migrations remain
+  unapplied. In the latter case the message MUST name the pending migrations. Migrations MUST
+  be applied only by the documented command in FR-011, never automatically during startup,
+  because an accidental start would otherwise mutate the schema and, on a single-writer
+  engine, two processes racing to migrate is a real hazard rather than a theoretical one.
 
 **Testing**
 
@@ -282,7 +300,11 @@ confirm the recurring task left observable evidence each time it ran.
   produces observable evidence of execution and carries no business behaviour.
 - **FR-028**: A scheduled execution MUST NOT begin while the previous execution of the same
   task is still running.
-- **FR-029**: The interval MUST be changeable through configuration without a code change.
+- **FR-029**: The interval MUST be changeable through configuration without a code change. It
+  MUST default to five minutes, matching the cadence the constitution sets for the future
+  order promotion job, so the placeholder rehearses the real timing. Because that default
+  exceeds the whole verification budget in SC-003, automated tests MUST be able to override
+  the interval through the same configuration mechanism rather than waiting on it.
 
 **Observability**
 
@@ -302,9 +324,9 @@ confirm the recurring task left observable evidence each time it ran.
 - **FR-032**: On receiving a termination signal, the service MUST stop accepting new
   requests, allow in-flight requests and any currently executing scheduled task to finish,
   close the database connection cleanly, and exit with a zero status.
-- **FR-033**: The drain described in FR-032 MUST be bounded by a configurable timeout. If the
-  timeout expires while work is still running, the service MUST exit non-zero and MUST record
-  what was abandoned.
+- **FR-033**: The drain described in FR-032 MUST be bounded by a configurable timeout,
+  defaulting to ten seconds. If the timeout expires while work is still running, the service
+  MUST exit non-zero and MUST record what was abandoned.
 - **FR-034**: Once shutdown has begun, the service MUST NOT start a new scheduled execution.
 
 **HTTP conventions**
@@ -337,8 +359,10 @@ deferred to later specifications. The concepts below exist only to support the f
   running service in under 10 minutes, using only the documented commands.
 - **SC-002**: 100% of documented commands succeed on a clean clone at the first attempt, with
   zero undocumented manual steps.
-- **SC-003**: The full quality and test verification completes in under 2 minutes on a
-  standard developer machine, so it is cheap enough to run before every push.
+- **SC-003**: Full quality and test verification is designed to complete within a two-minute
+  budget, so it stays cheap enough to run before every push. This is an advisory target,
+  reviewed by people when it slips rather than enforced by a timer, because a wall-clock gate
+  fails for reasons unrelated to the code and teaches the team to ignore red builds.
 - **SC-004**: 100% of startup attempts with a missing or malformed setting are rejected
   within 5 seconds, naming the offending setting.
 - **SC-005**: Running the test suite twice consecutively produces identical results, and every
@@ -346,8 +370,10 @@ deferred to later specifications. The concepts below exist only to support the f
 - **SC-006**: 100% of test runs that execute zero tests are reported as failures.
 - **SC-007**: The schema can be rebuilt from empty in a single command, producing an identical
   result on every machine.
-- **SC-008**: The placeholder recurring task fires on every configured interval over a
-  30-minute observation window, with zero overlapping executions.
+- **SC-008**: The placeholder recurring task fires on every configured interval across an
+  observation window of at least six consecutive intervals, with zero overlapping executions.
+  Expressing the window in intervals rather than in wall-clock minutes keeps this verifiable
+  at the five-minute default and at the shortened interval tests override it with.
 - **SC-009**: A developer can identify which command to run for any routine task by reading
   the project documentation alone, without reading source.
 - **SC-010**: 100% of shutdown attempts either drain fully within the configured timeout and
