@@ -17,3 +17,13 @@ I chose Node without any rigid criteria. In the real world, picking a stack requ
 ## Living Document
 
 This README will act as a living document. As development progresses, I will log all architectural tradeoffs, out-of-scope decisions, and any specific challenges faced while using the AI spec-kit right here.
+
+## Architectural Decisions and AI Workflow Log
+
+Where I overrode the AI's first instinct, and why.
+
+| Area | Phase |  AI Initial Idea | My Implementation | The Reason |
+| :--- | :--- | :--- | :--- | :--- |
+| **Status Updates** | Brainstorm | Loop in Node, then one massive SQL update. | Batched SQL updates with a hard limit per tick. | Massive updates lock the database (bloated index, too many records, etc.). Endless loops block the Node event loop. |
+| **Money Format** | Brainstorm | Decimals or floats. | Integers only (minor units like paise or cents). | Prevents rounding errors from floating point math. |
+| **Business Scope** | Brainstorm | Left open. | Single country and currency. | Multi currency logic adds unnecessary complexity for a basic CRUD test. |
