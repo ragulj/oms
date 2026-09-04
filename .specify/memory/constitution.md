@@ -1,31 +1,43 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 -> 2.0.0
-Bump rationale: MAJOR. Principle III previously mandated a CTE with
-`FOR UPDATE SKIP LOCKED`. SQLite has no row-level locking, so that mechanism is
-removed and replaced. Code written to comply with v1.0.0 is no longer compliant.
-The datastore mandate also changes from a PostgreSQL-class engine to SQLite, and
-the persistence layer is fixed to Drizzle ORM.
+Version change: 2.0.0 -> 2.1.0
+Bump rationale: MINOR. Guidance in two principles is materially expanded, and
+nothing compliant under v2.0.0 becomes non-compliant. Principle IV gains a verb it
+always meant to cover. Principle VI is restated as the property it means rather
+than the single mechanism it named, with that mechanism retained as the default.
+Spec 001's suite clears `harness_probe` with `DELETE FROM` and stays compliant,
+because that table permits row deletion and the default is unchanged.
+
+Why now: both changes correct the same defect, a principle mandating a mechanism
+where it means to mandate a property. This constitution has been amended once
+before for exactly that reason. v1.0.0's Principle III named
+`FOR UPDATE SKIP LOCKED` on an engine that has no row-level locking, and the
+v2.0.0 amendment replaced the mechanism while preserving the intent. The defect
+corrected here surfaced while writing Spec 002 (Order Entities). It is fixed in
+the governing text rather than worked around in that specification, because the
+gap is in the constitution and would otherwise be rediscovered by every later spec.
 
 Modified principles (names unchanged, bodies amended):
-  III. Bounded Background Processing
-       - removed: CTE + FOR UPDATE SKIP LOCKED
-       - added: bounded primary-key claim, per-chunk transactions, WAL + busy_timeout
   IV. Exact-Integer Money and Immutable History
-       - narrowed: immutability enforced by SQLite trigger with RAISE(ABORT)
-       - added: INTEGER column type mandate, REAL and NUMERIC prohibited
-  V. Two-Phase Keyset Reads
-       - narrowed: ordering timestamps stored as INTEGER microseconds since epoch
-       - added: TEXT ISO-8601 and REAL julianday representations prohibited
+      - added: DELETE against a historical line item MUST be aborted, on the same
+        terms as UPDATE
+      - added: the resulting permanence of a stored order, and cancellation as the
+        lifecycle's answer to an unwanted order
   VI. Integration-Proven Verification
-       - added: tests run against a real SQLite database; DELETE FROM in place of TRUNCATE
-       - added: iteration-cap coverage requirement
+      - changed: isolation stated as an observable property rather than as the
+        DELETE FROM mechanism alone
+      - retained: DELETE FROM as the default, required wherever the table permits
+        row deletion
+      - added: rebuilding the table as the required alternative where deletion is
+        refused, holding the same isolation property
+      - widened: integration coverage now names deletions of historical line items
+        alongside writes to them
 
 Modified sections:
-  Scope and Technical Constraints - rewritten for SQLite and Drizzle; capability
-    floor replaced; single-process deployment constraint added
-  Development Workflow and Quality Gates - review checklist updated for the new stack
+  Development Workflow and Quality Gates - review checklist gains a line for
+    deletion paths against historical line items, and the isolation line is widened
+    to apply whatever mechanism a test uses
 
 Principles added: none (count unchanged at 6)
 Sections removed: none
@@ -35,6 +47,13 @@ Downstream artifacts reviewed:
     Constitution Check gate; no edit required
   .specify/templates/spec-template.md - no constitution-coupled placeholders
   .specify/templates/tasks-template.md - no constitution-coupled placeholders
+  specs/001-project-foundation/ - remains compliant; no edit required
+  specs/002-order-entities/spec.md - NEEDS UPDATE. FR-025d is resolved by this
+    amendment: it required the Principle VI deviation to be recorded in the
+    implementation plan's Complexity Tracking section, and there is no longer a
+    deviation to record. FR-025a also becomes constitution-backed rather than a
+    specification-level extension. That edit is deliberately not made here, since
+    this command's scope is governance only.
 
 Deferred TODOs: none
 -->
@@ -104,9 +123,16 @@ transported as integers denominated in the currency's minor unit, on columns dec
 floating point arithmetic MUST NOT be used to derive a monetary value in application code.
 
 Order line items MUST capture the price as of the moment the order was placed. Historical
-line items MUST be immutable, enforced by a SQLite trigger that calls `RAISE(ABORT, ...)` on
-attempts to update the captured price. Enforcement MUST NOT rely on a Drizzle-level guard or
-an application convention.
+line items MUST be immutable, enforced by SQLite triggers that call `RAISE(ABORT, ...)` on
+attempts to update the captured price and on attempts to delete the row. Enforcement MUST NOT
+rely on a Drizzle-level guard or an application convention.
+
+Deletion is covered because a deletion rewrites financial history exactly as effectively as
+an update, and a rule naming only one verb protects nothing the other cannot reach. The
+consequence is that a stored order is permanent: it carries at least one line item, that line
+item cannot be deleted, and deleting the order is refused while any line item references it.
+Cancellation is the lifecycle's answer to an unwanted order. Deletion is not, and MUST NOT be
+introduced as one.
 
 Rationale: Binary floating point cannot represent decimal money exactly, and rounding error
 compounds silently across totals. SQLite's dynamic typing makes this worse, since a `REAL`
@@ -135,15 +161,23 @@ number well beyond any plausible lifetime of this system, so no BigInt handling 
 ### VI. Integration-Proven Verification
 
 Tests MUST be isolated and MUST run against a real SQLite database rather than a mocked
-repository. Every test MUST clear the tables it touches in `beforeEach`, using `DELETE FROM`
-since SQLite has no `TRUNCATE`. Assertions MUST NOT depend on global row counts, seeded
-fixtures shared across files, or any other cross-test state.
+repository.
+
+Isolation is a property, not a mechanism. Every test MUST observe only the rows it created,
+MUST produce the same outcome run alone as it does in the full suite, and MUST NOT depend on
+global row counts, seeded fixtures shared across files, or any other cross-test state.
+
+`DELETE FROM` in `beforeEach` is the default mechanism and MUST be used wherever the table
+permits row deletion, since SQLite has no `TRUNCATE`. Where a table refuses row deletion, as
+the historical tables protected by Principle IV do, isolation MUST instead be achieved by
+rebuilding the table, and that rebuild MUST deliver the same property. Any mechanism that
+leaves the guarantees above unmet is non-compliant, whichever mechanism it is.
 
 Every core claim in this constitution MUST be backed by an integration test that exercises
 the failure mode it prevents, including concurrent transitions racing on the same order,
 precision boundaries on money arithmetic, cursor behaviour at identical timestamps,
-rejection of writes to historical line items, and a background tick honouring its iteration
-cap against a backlog larger than that cap.
+rejection of writes to and deletions of historical line items, and a background tick
+honouring its iteration cap against a backlog larger than that cap.
 
 Rationale: These guarantees are concurrency and precision guarantees. A unit test with a
 mocked repository cannot observe a lost update, a coerced `REAL`, or a truncated timestamp,
@@ -190,7 +224,9 @@ Code review MUST verify, for every change touching these areas:
 - No TEXT or REAL timestamp on an ordering column, and no millisecond-truncated cursor.
 - No persistence access that bypasses Drizzle, and no schema change without a committed
   drizzle-kit migration.
-- No test that leaks state or asserts against global counts.
+- No code path that deletes a historical line item, and no schema that leaves one reachable.
+- No test that leaks state or asserts against global counts, whichever isolation mechanism it
+  uses.
 
 Any deviation MUST be recorded with its justification in the Complexity Tracking section of
 the implementation plan before the code is merged. Undocumented deviations are rejected in
@@ -216,4 +252,4 @@ Compliance is reviewed at two gates: the Constitution Check performed during
 `/speckit-plan`, and every code review. Both MUST cite the specific principle when rejecting
 a change.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-05 | **Last Amended**: 2026-09-05
+**Version**: 2.1.0 | **Ratified**: 2026-09-05 | **Last Amended**: 2026-09-05
