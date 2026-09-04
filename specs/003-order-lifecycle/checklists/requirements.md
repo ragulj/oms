@@ -48,5 +48,13 @@ planner is the only place the difference is visible, so it is where the criterio
 The criterion is phrased in terms of index versus scan, which every relational engine expresses, not
 in terms of a particular one's syntax.
 
+**Re-validated after the clarification pass (2026-09-05).** 16/16 items passed before and after, but
+"Requirements are testable and unambiguous" passed only marginally beforehand: six requirements
+deferred a threshold to "a documented maximum" without naming it, which is not something a test can
+be written against. Those now carry their values (FR-014, FR-015, FR-030, FR-046, FR-083, FR-084), and
+three requirements were added to close coverage gaps the scan surfaced: FR-017a (how the customer and
+product dependencies come to hold rows, which SC-011 depends on), FR-042a (the exactness check applies
+on read, not only on write), and FR-056a (why a customer filter is refused rather than merely absent).
+
 Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`. All items
 currently pass.

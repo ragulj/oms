@@ -48,6 +48,23 @@ already holds at the storage layer, this specification relies on it rather than 
   the second observes the first's effect through its changed-row count. The guarantee under test is
   that the predicate settles the race; a thread-level race would not test anything the predicate does
   not already decide.
+- Q: What makes two creation requests "the same" for idempotency purposes, and how does a replay
+  announce itself? → A: a hash over the canonical form of the body, with object keys ordered and
+  insignificant whitespace removed, and a replay answers 200 rather than 201 with a marker header.
+  Comparing raw bytes would make a client that re-serialises its body on retry, which most HTTP
+  clients do, look like a key collision and receive a conflict for a request that is genuinely
+  identical, turning the safety feature into a source of false conflicts.
+- Q: What are the concrete values behind the limits stated as "documented"? → A: quantity 1 to
+  1,000,000 per line; 1 to 100 lines per order; page size defaulting to 50 with a maximum of 100;
+  idempotency keys of 8 to 255 characters drawn from letters, digits, hyphen, and underscore; a chunk
+  of 100 orders; an iteration cap of 10. The number that carries the weight is chunk times cap, 1,000
+  orders per tick: that is the blocking-time budget Principle III is actually about. One hundred rows
+  per statement keeps a single synchronous chunk in the low milliseconds, ten of them bound a tick
+  well under a second, and 1,000 orders per five minutes drains a 12,000-order backlog within an hour.
+- Q: How do `customers` and `products` come to hold usable rows, given that no endpoint writes them?
+  → A: a dedicated, re-runnable seeding command that prints the identifiers it created, never invoked
+  by the test suite. A data migration carrying demo rows would insert them into every database
+  including the test one, which breaks the property that each test observes only the rows it created.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -274,14 +291,20 @@ remainder still pending and each chunk committed separately.
   creation or update timestamp, a unit price, a line total, or an order total. Supplying any of them
   MUST be rejected rather than ignored.
 - **FR-013**: A creation request with zero line items MUST be rejected.
-- **FR-014**: Each quantity MUST be a whole number of at least 1 and at most a documented per-line
-  maximum. Anything else MUST be rejected before any write.
-- **FR-015**: An order MUST NOT exceed a documented maximum number of line items, so that a single
-  request cannot make the derived total or the write unbounded.
+- **FR-014**: Each quantity MUST be a whole number of at least 1 and at most 1,000,000. Anything else,
+  including a fractional value, a numeric string, or a value outside the exactly representable integer
+  range, MUST be rejected before any write.
+- **FR-015**: An order MUST carry between 1 and 100 line items, so that a single request cannot make
+  the derived total or the write unbounded.
 - **FR-016**: A creation request naming a customer that does not exist MUST be rejected, and the
   rejection MUST identify which field was unresolvable.
 - **FR-017**: A creation request naming any product that does not exist MUST be rejected, and no order
   and no line item MUST be stored.
+- **FR-017a**: A re-runnable seeding command MUST populate the customer and product dependencies for
+  local use and MUST report the identifiers it created, so an order can be placed without reading the
+  source. It MUST NOT be invoked by the test suite and MUST NOT be carried as migration data, because
+  demo rows present in every database would break the requirement that a test observes only the rows
+  it created.
 - **FR-018**: The unit price stored on each line MUST be read from the product catalog at the moment
   of creation. The caller MUST have no way to influence it.
 - **FR-019**: The product description stored on each line MUST likewise be captured from the catalog
@@ -308,14 +331,19 @@ remainder still pending and each chunk committed separately.
 - **FR-028**: The creation endpoint MUST accept an optional idempotency key header.
 - **FR-029**: When no key is supplied, no replay protection applies and each request creates an order.
   This MUST be stated in the endpoint's documentation rather than left implicit.
-- **FR-030**: A supplied key MUST conform to a documented length and character range. A malformed key
-  MUST be rejected.
-- **FR-031**: The key, a fingerprint of the request body, and the identifier of the resulting order
-  MUST be recorded in the same transaction that creates the order. A key MUST NOT be recorded for an
-  order that was not created.
+- **FR-030**: A supplied key MUST be 8 to 255 characters drawn from letters, digits, hyphen, and
+  underscore. A malformed key MUST be rejected.
+- **FR-030a**: The body fingerprint MUST be derived from a canonical form of the request body, with
+  object keys ordered and insignificant whitespace removed, so that two byte-different serialisations
+  of the same request compare equal. A raw-byte comparison MUST NOT be used, because a client that
+  re-serialises its body on retry would otherwise be told its identical request conflicts.
+- **FR-031**: The key, the body fingerprint, and the identifier of the resulting order MUST be
+  recorded in the same transaction that creates the order. A key MUST NOT be recorded for an order
+  that was not created.
 - **FR-032**: A repeat request carrying a key already recorded, with a matching body fingerprint, MUST
-  return the originally created order and MUST NOT create a second one. The response MUST be
-  distinguishable from the original creation.
+  return the originally created order and MUST NOT create a second one. The response MUST report 200
+  rather than the 201 of the original creation, and MUST carry a marker identifying it as a replay, so
+  a caller can tell the two apart without comparing bodies.
 - **FR-033**: A repeat request carrying a key already recorded, with a differing body fingerprint,
   MUST be rejected as a conflict, and no order MUST be created.
 - **FR-034**: Two creation requests carrying the same key MUST NOT both create an order. The guarantee
@@ -337,6 +365,9 @@ remainder still pending and each chunk committed separately.
 - **FR-040**: An identifier matching no order MUST be reported as not found.
 - **FR-041**: Line items MUST be returned in a deterministic order that is the same on every read.
 - **FR-042**: The order total MUST be derived on read. No stored total column MUST be introduced.
+- **FR-042a**: The read path MUST apply the same exactness check as FR-025. A total that is not
+  exactly representable MUST fail loudly rather than be returned rounded, on every path that derives
+  one, so contract obligation O2 is discharged on reads and not only on writes.
 - **FR-043**: The line item array MUST never be empty, which follows from FR-020 rather than from a
   defensive check.
 
@@ -347,8 +378,9 @@ remainder still pending and each chunk committed separately.
 - **FR-045**: Listing MUST issue exactly two queries: one for the page of order identifiers, then one
   for the line items belonging to exactly those identifiers. A join followed by a limit MUST NOT be
   used.
-- **FR-046**: Page size MUST be caller-controllable within a documented default and maximum. A value
-  outside the permitted range MUST be rejected rather than clamped.
+- **FR-046**: Page size MUST be caller-controllable, defaulting to 50 and capped at 100. A value
+  outside the permitted range MUST be rejected rather than clamped, so a caller never believes it
+  received more than it did.
 - **FR-047**: Pagination MUST be keyset. An offset or page-number parameter MUST NOT be accepted;
   supplying one MUST be rejected.
 - **FR-048**: The cursor MUST be opaque to the caller and MUST carry both the full microsecond
@@ -369,6 +401,9 @@ remainder still pending and each chunk committed separately.
   inspecting the database's own execution plan against a table large enough to distinguish the two.
 - **FR-056**: An optional status filter MUST be supported, restricted to the known statuses. An
   unknown value MUST be rejected.
+- **FR-056a**: No other filter MUST be offered, and a filter by customer MUST NOT be added. Spec 002
+  left the customer column deliberately unindexed under its FR-039a, so such a filter would scan the
+  table and quietly violate FR-054. Adding one requires adding the index first.
 - **FR-057**: Orders created after a page was produced MUST NOT cause rows to repeat or disappear on
   subsequent pages of the same traversal.
 
@@ -430,10 +465,11 @@ remainder still pending and each chunk committed separately.
 - **FR-082**: Each iteration MUST claim a bounded chunk by selecting a capped set of order identifiers
   and updating exactly those rows, with the expected status re-asserted in the outer predicate, in the
   shape Constitution Principle III mandates.
-- **FR-083**: The chunk size MUST be configurable, MUST be positive, and MUST have a documented
-  default.
-- **FR-084**: A hard iteration cap per tick MUST be enforced. Reaching it MUST end the tick and leave
-  the remaining backlog for the next one. The cap MUST be configurable and positive.
+- **FR-083**: The chunk size MUST be configurable, MUST be positive, and MUST default to 100 orders.
+- **FR-084**: A hard iteration cap per tick MUST be enforced, configurable, positive, and defaulting
+  to 10. Reaching it MUST end the tick and leave the remaining backlog for the next one. The product
+  of the two defaults, 1,000 orders per tick, is the tick's blocking-time budget rather than a
+  throughput target.
 - **FR-085**: A tick MUST also end when an iteration claims zero rows.
 - **FR-086**: Each chunk MUST commit in its own transaction. A single write transaction MUST NOT span
   more than one chunk, and MUST NOT span a whole tick.
@@ -511,7 +547,8 @@ remainder still pending and each chunk committed separately.
 - **SC-004**: Given two cancellation attempts against one pending order, exactly one reports success
   and exactly one reports a conflict, in 100% of trials and in either interleaving.
 - **SC-005**: A single background tick against a backlog of 5,000 pending orders promotes exactly the
-  configured chunk size times iteration cap and no more, leaving the remainder pending.
+  configured chunk size times iteration cap, 1,000 at the defaults, and no more, leaving the remaining
+  4,000 pending for later ticks.
 - **SC-006**: A creation request replayed with the same idempotency key produces exactly one stored
   order, whether the replay is sequential or interleaved with the original.
 - **SC-007**: Every foreseeable invalid input produces a documented client-error status with a
