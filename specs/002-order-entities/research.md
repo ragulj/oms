@@ -193,15 +193,87 @@ because of R5.
 the two groups need different treatment. It becomes two lists, and the harness applies the right
 mechanism to each. This is the one place Spec 001's test infrastructure changes.
 
-**Open question deferred to implementation**: whether the rebuild runs per test file or per test. Per
-test is the stronger guarantee and matches Spec 001's SC-005; per file is faster. The deciding factor
-is the measured cost of dropping and recreating two tables plus their triggers and indexes, which is
-cheap in SQLite but not free, and it interacts with the advisory two-minute budget in Spec 001's
-SC-003. Measure first, then choose, and record the number.
+**Resolved during implementation: per test.** The question was whether to rebuild per test file or
+per test, trading isolation strength against suite time. It was settled by measurement rather than by
+argument.
+
+One rebuild drops two tables and replays nine captured statements. Timed over 200 iterations against
+a migrated database, that costs **0.569 ms**.
+
+| Granularity | Rebuilds per run | Cost | Isolation |
+| :--- | :--- | :--- | :--- |
+| Per test | 116 | ~66 ms | Every test starts empty |
+| Per test file | 30 | ~17 ms | Tests share state within a file |
+
+The difference is **49 ms across a suite that runs in 5.96 s**, under one percent, against an
+advisory budget of two minutes. There is no trade to make at that scale, so the stronger option wins
+on its merits: per test, which is what Spec 001's SC-005 already promises and what the weaker option
+would have quietly walked back.
+
+Had the numbers gone the other way, the honest move would have been per file plus an explicit note
+that SC-005 no longer holds within a file. They did not, so it does not arise.
+
+## R9: A JavaScript number interpolated into a Drizzle `sql` template becomes a bound parameter
+
+**Found during implementation, not Phase 0.**
+
+Writing the monetary ceiling as ``sql`... <= ${MAX_MINOR_UNITS}` `` produced this in the generated
+migration:
+
+```sql
+CHECK(typeof("products"."unit_price_minor") = 'integer' AND ... <= ?)
+```
+
+Drizzle treats an interpolated value as a bound parameter, which is correct for a query and wrong for
+DDL: a `CHECK` constraint cannot carry a placeholder. The constraint would have been meaningless, and
+nothing at generation time complains.
+
+**Resolution**: `${sql.raw(String(MAX_MINOR_UNITS))}`, which emits the literal `9007199254740991`.
+
+**Why Phase 0 missed it**: R3's probe used a hard-coded literal inside the template rather than an
+interpolated constant, so it exercised the path that works. The lesson generalises past this feature:
+generated DDL has to be read, not assumed, and any future `check()` carrying a constant needs the same
+treatment.
+
+## R10: SQLite's clock resolves to milliseconds, which the touch trigger has to account for
+
+**Found during implementation, not Phase 0.**
+
+R6 established that an `AFTER UPDATE` trigger can maintain `updated_at_us` without disturbing the
+changed-row count. It did not establish what the trigger should read the time *from*.
+
+Two problems surfaced:
+
+- `julianday('now')` carries float rounding artifacts, landing roughly 9 microseconds off a value
+  computed from `unixepoch`. It does not overflow, contrary to an initial concern: the product lands
+  near 1.79e15, well inside the exact range.
+- Both `julianday` and `unixepoch('now','subsec')` resolve to milliseconds. Two reads taken back to
+  back return identical values. If the write path sets `created_at_us` with true microsecond
+  precision, a bare clock reading in the trigger can land *below* it, tripping
+  `orders_updated_at_us_valid` and aborting a legitimate status change.
+
+**Resolution**:
+
+```sql
+SET updated_at_us = MAX(
+  CAST(unixepoch('now', 'subsec') * 1000000 AS INTEGER),
+  OLD.updated_at_us + 1
+)
+```
+
+The `MAX` makes the column monotonic, keeps it at or above `created_at_us` by construction, and makes
+every update advance it strictly even when two land inside the same millisecond. Verified: changed-row
+counts of 1, 1, 0 across a matching update, a second matching update, and a non-matching one, with
+`updated_at_us` advancing by the one-microsecond tiebreak when the clock had not moved.
+
+**Consequence for the spec**: this is *stronger* than the spec requires. The edge case in spec.md says
+two updates inside one microsecond "may" leave the timestamp identical. They never do. Permitting
+identical values and never producing them is compatible, so no spec change is needed.
 
 ## Open questions
 
-- The rebuild granularity in R8. Everything else needed to write the schema is settled.
+None. R8's rebuild granularity was the only one, and it was settled by measurement during
+implementation.
 
 ## Risks
 
@@ -212,5 +284,5 @@ SC-003. Measure first, then choose, and record the number.
 | Timestamp trigger corrupting the 409 decision | **Void** | R6 verified the count is unaffected |
 | Trigger recursion on the same table | **Void** | Default `recursive_triggers = 0`, confirmed |
 | A boundary test that proves only one of the two ceiling clauses | **Live** | R7. Mitigated by requiring a BigInt or SQL literal case |
-| Table rebuild eroding the advisory verification budget | **Live** | R8. Measure before choosing granularity |
+| Table rebuild eroding the advisory verification budget | **Void** | Measured at 0.569 ms per rebuild, 66 ms across the run against a 5.96 s suite |
 | Drizzle schema modules not being the full source of truth | **Live, accepted** | Recorded in the plan's Complexity Tracking. A reviewer reading only the schema files will not see the triggers |
