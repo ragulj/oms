@@ -30,8 +30,11 @@
   Block deletion too. An `UPDATE` and a `DELETE` rewrite financial history equally well, so the
   guarantee covers both. This makes a stored order undeletable in practice and stops the test
   suite from clearing these tables with row deletion, so isolation for them is achieved by
-  rebuilding rather than clearing. That deviates from the mechanism Constitution Principle VI
-  names and MUST be recorded in the implementation plan's Complexity Tracking section.
+  rebuilding rather than clearing. This answer originally deviated from Constitution Principle VI,
+  which named `DELETE FROM` as the isolation mechanism. The constitution was amended to v2.1.0 in
+  response: Principle IV now covers deletion, and Principle VI now states isolation as a property
+  with rebuilding named as the required alternative where a table refuses row deletion. Both
+  halves of this answer are therefore constitution-backed, and no deviation remains to record.
 - Q: When an order's status changes, what guarantees that its last-changed timestamp moves with
   it? → A: A database trigger sets it on every update to the row. Leaving it to each write path
   would make it the only invariant here enforced by remembering, and the bounded claim in
@@ -376,21 +379,24 @@ Story 1's tables.
   price, so a historical order can be rendered without joining a catalog whose values have since
   changed.
 - **FR-025a**: Deleting a stored Order Line Item MUST be aborted by the database, on the same
-  terms as the update rules above. An update and a deletion rewrite financial history equally
-  well, and a rule covering only one of them protects nothing that the other cannot reach.
+  terms as the update rules above, per Constitution Principle IV. An update and a deletion
+  rewrite financial history equally well, and a rule covering only one of them protects nothing
+  that the other cannot reach.
 - **FR-025b**: A stored Order is consequently undeletable. It always has at least one line item
   by FR-008, that line item cannot be removed by FR-025a, and FR-007 refuses to delete an Order
   while any line item references it. A separate deletion rule on Order MUST NOT be added, because
   a second guard for a guarantee that already holds is a thing to keep in sync for no gain.
 - **FR-025c**: Because these tables refuse row deletion, test isolation for them MUST be achieved
-  by rebuilding the tables rather than by clearing rows. The observable requirement is unchanged
-  from Spec 001's SC-005: every test MUST produce the same outcome run alone as it does in the
-  full suite, and no test's assertions MUST depend on rows another test created. Choosing the
-  rebuild granularity is a planning decision, constrained by that guarantee.
-- **FR-025d**: FR-025c deviates from Constitution Principle VI, which names `DELETE FROM` in
-  `beforeEach` as the isolation mechanism. The deviation MUST be recorded with its justification
-  in the Complexity Tracking section of the implementation plan before any code is merged, per
-  the constitution's Development Workflow section. It MUST NOT be resolved by weakening FR-025a.
+  by rebuilding the tables rather than by clearing rows, which is what Constitution Principle VI
+  requires where deletion is refused. The observable requirement is the property that principle
+  states, matching Spec 001's SC-005: every test MUST observe only the rows it created, MUST
+  produce the same outcome run alone as it does in the full suite, and MUST NOT depend on rows
+  another test created. Choosing the rebuild granularity is a planning decision, constrained by
+  that property.
+- **FR-025d**: Tables that still permit row deletion, including `harness_probe` from Spec 001,
+  MUST continue to be cleared with `DELETE FROM`, which remains the default mechanism under
+  Constitution Principle VI. The rebuild in FR-025c applies only where deletion is refused, and
+  MUST NOT be adopted suite-wide as a convenience.
 
 **Status**
 
@@ -550,8 +556,9 @@ warrant challenge are marked as load-bearing.
   pays for that by rebuilding these tables instead of clearing them. The alternative was to leave
   deletion open so the existing isolation mechanism kept working, which would have meant the
   immutability guarantee stopped at the one verb a caller is most likely to reach for when they
-  want history gone. The cost lands on test setup time and on a recorded deviation from
-  Constitution Principle VI, not on the guarantee.
+  want history gone. The cost lands on test setup time, not on the guarantee. This choice
+  prompted the amendment of the constitution to v2.1.0, which closed the same gap in Principle IV
+  and restated Principle VI's isolation rule as a property rather than a single mechanism.
 - **Load-bearing**: Quantity is immutable along with price. The constitution names only the
   captured price, but line total is price multiplied by quantity, so leaving quantity mutable
   would leave the guarantee it describes reachable by another route.

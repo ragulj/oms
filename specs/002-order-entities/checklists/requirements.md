@@ -79,12 +79,13 @@ stable across revisions.
 
 ### Two things a reviewer should look at first
 
-**FR-025d records a deviation from the constitution.** Principle VI names `DELETE FROM` in
-`beforeEach` as the test isolation mechanism, and FR-025a makes that impossible for the domain
-tables. The deviation must be carried into the Complexity Tracking section of the implementation
-plan before any code merges, and it must not be resolved by relaxing FR-025a. This is the item
-most likely to be missed, because it is a constraint on a later artifact rather than on the
-schema.
+**FR-025a prompted a constitution amendment.** Blocking deletion originally conflicted with
+Principle VI, which named `DELETE FROM` as the isolation mechanism. Rather than record a
+deviation, the constitution was amended to v2.1.0: Principle IV now covers deletion, and
+Principle VI now states isolation as a property with rebuilding named as the required alternative
+where a table refuses row deletion. FR-025a and FR-025c are therefore constitution-backed, and no
+Complexity Tracking entry is needed. FR-025d now guards the other direction, keeping `DELETE FROM`
+mandatory for tables that still permit it.
 
 **FR-001a reverses an explicit instruction in the feature description**, which asked that
 external entities be treated as existing and never defined here. The reversal was chosen
