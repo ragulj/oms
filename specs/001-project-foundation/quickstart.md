@@ -27,14 +27,14 @@ Run tests".
 
 ## Prerequisites
 
-- **Node.js**, at or above the version the README documents. That floor is derived, not
-  pinned: it is the highest minimum any direct dependency requires (FR-003). Today that
-  resolves to Node 20. Development is against Node 24.19.0.
+- **Node.js 22 or above.** That floor is derived, not pinned: it is the highest minimum any
+  direct dependency requires (FR-003). `better-sqlite3` sets it at 22, above the framework's
+  20. Development is against Node 24.19.0.
 - **npm**, bundled with Node.
 - **No database server to install.** The engine is a single file.
-- **A C++ toolchain may or may not be required.** This depends on the unresolved driver
-  decision. See "Open decisions" at the end, because on a machine without Python this is the
-  difference between a working install and a failed one.
+- **No C++ toolchain, and no Python.** The driver ships prebuilt binaries for eight platform
+  targets inside its npm package, so nothing compiles from source at install time. This was
+  verified rather than assumed.
 
 ## Setup
 
@@ -122,17 +122,15 @@ no special-case handling, and expect no secret to appear anywhere. The startup r
 confirm the resolved configuration source, database location, applied connection settings, and
 registered recurring tasks (FR-031).
 
-## Open decisions that block full validation
+## Open decisions
 
-Two items in [research.md](./research.md) are unresolved and will change parts of this guide.
+**None that block this guide.** Both items this section previously listed were settled by
+experiment on 2026-09-05 and are recorded in [research.md](./research.md):
 
-1. **The SQLite driver.** If it lands on `better-sqlite3`, the Prerequisites section gains
-   Python and a C++ toolchain, and installation will fail on this development host until they
-   are present. If it lands on `node:sqlite`, the derived Node floor rises. If it lands on
-   `@libsql/client`, the engine is a SQLite-compatible fork rather than SQLite, which is a
-   constitutional question and not merely a setup detail.
-2. **The TypeScript major version.** Affects whether the build works at all, since NestJS
-   relies on decorator metadata emit.
+- **SQLite driver**: `better-sqlite3@13.0.3`. Genuine SQLite 3.53.4, prebuilt binaries, native
+  transactions, no constitutional amendment needed.
+- **TypeScript**: `5.9.3`, using the NestJS-default compiler configuration.
 
-Settle both before working through this guide for real. Everything above is otherwise
-independent of them.
+The only deferred item left in the plan is runtime latency and throughput targets, which
+cannot be set until a domain endpoint exists to measure. Nothing in this guide depends on
+them.

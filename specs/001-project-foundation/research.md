@@ -29,9 +29,11 @@ install. That single fact reshapes the driver decision below.
 
 ## R1: SQLite driver selection
 
-**Decision: UNRESOLVED (NEEDS CLARIFICATION).** Three viable options, each with a real defect.
-A recommendation is given, but the deciding facts require an install to confirm, and this is a
-planning phase.
+**Decision: `better-sqlite3@13.0.3`. RESOLVED 2026-09-05 by experiment.**
+
+This section originally recorded three options each carrying a real defect, and recommended
+Option C. **The experiment overturned that.** Option A carries none of the defects attributed
+to it, which makes Options B and C moot rather than merely second choice.
 
 ### What Drizzle actually supports
 
@@ -43,24 +45,34 @@ Bun, Expo, React Native, Cloudflare Durable Objects, and Prisma leaves three can
 Peer dependency ranges from `npm view drizzle-orm peerDependencies` confirm
 `better-sqlite3 >= 7` and `@libsql/client >= 0.10.0` are both accepted by `drizzle-orm@0.45.2`.
 
-### Option A: `better-sqlite3@13.0.3`
+### Option A: `better-sqlite3@13.0.3` — SELECTED
 
 Real SQLite, synchronous, and the most widely used Drizzle SQLite driver. `engines` is
-`node >= 22`, satisfied.
+`node >= 22`.
 
-The problem is installation. `npm view better-sqlite3 scripts` returns no `install` or
-`postinstall` script, `optionalDependencies` is empty, and the only runtime dependency is
-`node-addon-api@^8`. The GitHub release for `v13.0.3` returned HTTP 200 but its payload
-contains no downloadable archive URLs. Taken together, installing this package appears to
-require a `node-gyp` source build, which needs Python and a C++ toolchain that this machine
-does not have.
+**Correction to the original analysis.** This section previously concluded that installation
+would require a `node-gyp` source build, reasoning from three registry signals: no `install`
+script, empty `optionalDependencies`, and a GitHub release whose payload carried no
+downloadable archives. That inference was wrong. The package ships prebuilt binaries **inside
+the npm tarball itself**, in a `prebuilds/` directory covering eight platform targets:
+`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `linuxmusl-arm64`, `linuxmusl-x64`,
+`win32-arm64`, `win32-x64`. No `prebuild-install`, no GitHub release assets, no toolchain. The
+missing Python on this host is simply irrelevant.
 
-Flagging honestly: this contradicts better-sqlite3's long-standing practice of shipping
-prebuilds through `prebuild-install`, so either the packaging changed in v13 or the registry
-metadata is not telling the whole story. Treat it as a strong signal, not a settled fact.
+**Verified by experiment**, because installing is not the same as working:
 
-**Verification**: attempt the install and observe whether it fetches a binary or invokes
-node-gyp.
+| Check | Result |
+|-------|--------|
+| Install on win32-x64, Node 24 | 2 packages in 2 seconds, no node-gyp invocation |
+| Loads and executes | Yes |
+| Engine reported | SQLite **3.53.4**, genuine SQLite rather than a fork |
+| `journal_mode = WAL` | Applies (Constitution, Scope) |
+| Changed-row count | `changes = 1` (Principle II) |
+| Native transactions | Works (Principle III) |
+
+**Consequence for FR-003**: `engines.node >= 22` is now the highest floor among direct
+dependencies, above NestJS's `>= 20`. The derived minimum therefore becomes **Node 22**. The
+derivation rule handled this without needing a separate decision, which is what it was for.
 
 ### Option B: `@libsql/client@0.18.0`
 
@@ -90,15 +102,17 @@ requires each background chunk to commit in its own transaction, so a proxy driv
 express transactions properly would fail a core principle later, in spec 003, long after this
 decision is cheap to reverse.
 
-### Recommendation
+### Outcome
 
-**Option C, contingent on confirming transaction support**; fall back to **Option A** if
-better-sqlite3 turns out to install from a prebuild after all.
+Option A satisfies every constraint simultaneously, so the tradeoff this section was built
+around does not exist. Real SQLite means **no constitutional amendment is needed**. Prebuilt
+binaries mean the toolchain constraint is void. Native transactions mean the `sqlite-proxy`
+risk that made Option C conditional never has to be tested.
 
-Rationale: C is the only option that satisfies both hard constraints at once, real SQLite for
-the constitution and no native compilation for this machine. B is the easiest to install and
-the one I would reject last, because trading the constitution's named engine for installation
-convenience is the kind of decision that looks reasonable now and expensive in spec 003.
+Options B and C were left in this document rather than deleted, because the reasoning that
+made them plausible is worth keeping: if a future platform lacks a prebuild, Option C is the
+fallback that preserves real SQLite, and Option B remains available at the cost of an
+amendment.
 
 ### Alternatives considered and rejected
 
@@ -114,7 +128,32 @@ convenience is the kind of decision that looks reasonable now and expensive in s
 
 ## R2: TypeScript major version
 
-**Decision: UNRESOLVED (NEEDS CLARIFICATION).**
+**Decision: `typescript@5.9.3`. RESOLVED 2026-09-05 by experiment.**
+
+TypeScript 7 was tested and **works**: a real `NestFactory.createApplicationContext` with
+constructor injection resolved correctly under TS 7.0.2, so the decorator metadata concern
+below turned out to be unfounded. It was rejected on ergonomics, not capability.
+
+TS 7 removed `moduleResolution: node10`, which is what NestJS tooling generates:
+
+| Compiler | Config | Result |
+|----------|--------|--------|
+| 5.9.3 | `commonjs` + `node` (NestJS default) | Clean compile |
+| 7.0.2 | `commonjs` + `node` | Fails, option removed |
+| 7.0.2 | `preserve` + `bundler` | Clean compile |
+| 7.0.2 | `nodenext` + `nodenext` | Clean compile |
+
+**Rationale**: every NestJS scaffold, document, and Jest preset assumes the classic
+configuration. Diverging from it costs more setup friction than the faster compiler returns on
+a project whose entire purpose is a low-friction foundation. One surface also remains
+untested: `ts-jest` against TS 7, which FR-016 depends on.
+
+**Alternatives considered**: TypeScript 7 with `nodenext/nodenext`, which is proven viable and
+is the configuration to use if the project later wants the native-port compiler.
+
+### Original analysis, retained
+
+The concern that drove this question, now resolved:
 
 The registry's current `typescript` is `7.0.2`, a major rewrite of the compiler. NestJS
 declares no TypeScript peer dependency, so nothing in the dependency graph constrains the
@@ -125,21 +164,21 @@ injection. Whether TypeScript 7 preserves that emit behaviour unchanged cannot b
 from package metadata, and getting it wrong produces failures that surface as confusing
 runtime injection errors rather than compile errors.
 
-**Rationale for leaving it open**: pinning `^5` would probably work and would be the safe
-guess, but it is still a guess, and FR-024 requires the strictest supported type checking,
-which makes the compiler version a correctness input rather than a preference.
-
-**Verification**: scaffold a trivial NestJS module with constructor injection, compile under
-each candidate, and confirm the injected dependency resolves at runtime.
+That concern proved unfounded. The verification described here was carried out, and TS 7 emits
+`design:paramtypes` correctly and drives NestJS injection without incident.
 
 ---
 
 ## R3: Node.js version floor
 
-**Decision: Node 20 is the documented minimum; develop against Node 24.**
+**Decision: Node 22 is the documented minimum; develop against Node 24.**
 
-**Rationale**: `@nestjs/core@12.0.1` declares `engines.node >= 20`, which is the only
-authoritative constraint in the dependency graph. The host runs 24.19.0.
+**Rationale**: FR-003's rule takes the highest floor among direct dependencies. Two declare
+one: `@nestjs/core@12.0.1` requires `>= 20`, and `better-sqlite3@13.0.3` requires `>= 22`. The
+driver therefore sets the floor at **Node 22**. The host runs 24.19.0, which satisfies it.
+
+This number was Node 20 before the driver was chosen. It moved without anyone deciding it
+should, which is the derivation rule working as intended.
 
 **Updated 2026-09-05 after clarification.** FR-003 now specifies a derivation rule rather than
 a number: the documented floor is the highest minimum required by any direct dependency,
@@ -239,27 +278,28 @@ is generous by orders of magnitude while still making a hang obvious.
 |---|----------|----------------------|----------------|
 | 1 | SQLite driver (R1) | Deciding facts need an install; one option carries a constitutional question | Attempt the better-sqlite3 install; verify `sqlite-proxy` transaction support |
 | 2 | TypeScript major version (R2) | NestJS 12 decorator metadata behaviour under TS 7 is unverifiable from metadata | Compile a trivial injected module under each |
-| 3 | Runtime latency and throughput targets | No domain endpoint exists in 001 to measure | Defer to the first domain spec |
+| 1 | Runtime latency and throughput targets | No domain endpoint exists in 001 to measure | Defer to the first domain spec |
 
-Questions 1 and 2 must be settled before implementation begins, because each is expensive to
-reverse once code depends on it. Question 3 is correctly deferred: inventing a latency target
-for a service with no domain endpoint would produce an untestable acceptance criterion.
+One question remains, and it is correctly deferred: inventing a latency target for a service
+with no domain endpoint would produce an untestable acceptance criterion.
 
 ### Closed since the first Phase 0 run
 
-The 2026-09-05 clarification round settled three questions this document previously carried.
-
-| Was | Now |
-|-----|-----|
-| Node floor, coupled to the driver decision | Decoupled. FR-003 specifies a derivation rule, so the floor follows whatever the dependency graph requires |
-| Drain timeout default | Ten seconds (FR-033) |
-| Heartbeat interval default | Five minutes (FR-029), with tests required to override it and SC-008 rewritten in intervals |
+| Was | Now | Closed by |
+|-----|-----|-----------|
+| SQLite driver | `better-sqlite3@13.0.3` | Experiment, 2026-09-05 |
+| TypeScript major version | `typescript@5.9.3` | Experiment, 2026-09-05 |
+| Node floor, coupled to the driver | **Node 22**, derived automatically once the driver was chosen | FR-003 rule plus the driver decision |
+| Drain timeout default | Ten seconds (FR-033) | Clarification |
+| Heartbeat interval default | Five minutes (FR-029), tests override it, SC-008 rewritten in intervals | Clarification |
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| `sqlite-proxy` cannot express per-chunk transactions | Would break Constitution III in spec 003, after the foundation is built on it | Verify transaction support before committing to Option C, not after |
-| better-sqlite3 requires a source build on this host | Blocks Option A entirely on the current machine | Install Python and MSVC build tools, or choose another option |
-| Choosing libsql without an amendment | Silent drift from a constitution that names SQLite | Treat Option B as requiring an explicit amendment, not a judgement call |
-| TypeScript 7 breaks NestJS decorator metadata | Confusing runtime injection failures rather than compile errors | Verify before pinning; prefer the version that demonstrably works |
+| Risk | Status | Impact | Mitigation |
+|------|--------|--------|------------|
+| `sqlite-proxy` cannot express per-chunk transactions | **Void** | n/a | Option C not selected; `better-sqlite3` has native transactions |
+| better-sqlite3 requires a source build | **Void** | n/a | Disproven; prebuilt binaries ship in the npm tarball |
+| Choosing libsql without an amendment | **Void** | n/a | Option B not selected; the engine is genuine SQLite |
+| TypeScript 7 breaks NestJS decorator metadata | **Void** | n/a | Disproven by experiment; TS 5.9.3 selected on ergonomics instead |
+| A future platform target has no prebuilt binary | **Live** | Install fails on that platform | Option C in R1 is the fallback that preserves real SQLite |
+| `ts-jest` compatibility with TS 7 never tested | **Live but dormant** | Would matter only if the project later moves to TS 7 | Test before any TS 7 migration; FR-016 depends on it |

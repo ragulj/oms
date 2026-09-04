@@ -18,27 +18,32 @@ Every version below was resolved against the live registry rather than assumed.
 
 This plan was regenerated after a second clarification round on 2026-09-05, which closed three
 of the six items the first pass left open: the shutdown drain default, the scheduled task
-interval default, and the derivation rule for the minimum Node version. Two decisions remain
-genuinely open and are recorded as NEEDS CLARIFICATION rather than guessed: the SQLite driver,
-where a constitutional tension meets an unverifiable install fact, and the TypeScript major
-version. See [research.md](./research.md).
+interval default, and the derivation rule for the minimum Node version.
+
+The remaining two were then settled by experiment on the same day: the SQLite driver is
+`better-sqlite3@13.0.3` and the compiler is `typescript@5.9.3`. **No NEEDS CLARIFICATION
+remains that blocks implementation.** Only runtime latency targets stay deferred, correctly,
+because spec 001 has no domain endpoint to measure. See [research.md](./research.md).
 
 ## Technical Context
 
 **Language/Version**: TypeScript on Node.js. Verified on this development host: Node
 `v24.19.0`, npm `11.17.0`. `@nestjs/core@12.0.1` declares `engines.node >= 20`.
 
-FR-003 now fixes the derivation rule rather than a number: the documented floor is the highest
-minimum required by any direct dependency, recomputed whenever dependencies change. Today that
-resolves to **Node 20**, set by the framework's engine constraint, developed against Node 24.
-The rule also removes the coupling the first plan noted, because if the driver decision lands
-on `node:sqlite` the floor rises on its own without a separate decision.
+FR-003 fixes a derivation rule rather than a number: the documented floor is the highest
+minimum required by any direct dependency, recomputed whenever dependencies change. With the
+driver settled, two dependencies declare a floor, `@nestjs/core` at `>= 20` and
+`better-sqlite3` at `>= 22`. The documented minimum is therefore **Node 22**, developed
+against Node 24. It moved from 20 without anyone deciding it should, which is the rule doing
+its job.
 
-TypeScript version is **NEEDS CLARIFICATION**. The registry's current `typescript` is `7.0.2`,
-a major rewrite, and NestJS declares no TypeScript peer dependency that would constrain it.
-NestJS 12 depends on legacy decorators plus `emitDecoratorMetadata` for dependency injection,
-and whether TypeScript 7 preserves that emit behaviour cannot be established from package
-metadata alone. Resolve by testing, not by assuming.
+TypeScript is **`5.9.3`**, resolved by experiment. TypeScript 7.0.2 was tested and works:
+NestJS dependency injection resolved correctly under it, so the decorator metadata concern was
+unfounded. It was rejected on ergonomics. TS 7 removed `moduleResolution: node10`, which is
+what NestJS tooling generates, so adopting it means diverging from every NestJS scaffold,
+document, and Jest preset. On a project whose purpose is a low-friction foundation, that costs
+more than the faster compiler returns. TS 7 with `nodenext/nodenext` compiles cleanly and
+remains the configuration to use if the project later migrates.
 
 **Primary Dependencies**: Resolved from the registry on 2026-09-05.
 
@@ -48,7 +53,8 @@ metadata alone. Resolve by testing, not by assuming.
 | `@nestjs/schedule` | `12.0.1` | peers `@nestjs/core` v11 or v12, satisfied |
 | `drizzle-orm` | `0.45.2` | peers both candidate drivers |
 | `drizzle-kit` | `0.31.10` | migration generation and application |
-| SQLite driver | **NEEDS CLARIFICATION** | `better-sqlite3@13.0.3` or `@libsql/client@0.18.0` |
+| `better-sqlite3` | `13.0.3` | Selected by experiment. Ships prebuilt binaries in the tarball; `engines.node >= 22` sets the Node floor |
+| `typescript` | `5.9.3` | Selected by experiment. Clean compile with the NestJS-default `commonjs` + `node` config |
 | `jest` | `30.5.1` | NestJS scaffolding default |
 
 The configuration validation library is deliberately left unpinned. It is a routine choice for
@@ -69,9 +75,13 @@ non-zero (FR-019).
 
 **Target Platform**: Node.js service. No browser, mobile, or desktop surface. Development host
 verified as Windows 11 on `win32-x64`. **Python is not on PATH**, so `node-gyp` cannot compile
-a native addon from source on this machine. Any dependency lacking a published prebuilt binary
-for Node 24's ABI on `win32-x64` will fail to install here. This is the decisive constraint on
-the driver decision below.
+a native addon from source on this machine.
+
+That constraint was expected to decide the driver question and turned out not to bind at all:
+`better-sqlite3@13.0.3` ships prebuilt binaries for eight platform targets inside the npm
+tarball, including `win32-x64`, and installed in two seconds without invoking node-gyp. The
+constraint still stands as a property of this host and remains the reason to check any future
+native dependency before adopting it.
 
 **Project Type**: Single backend web service. No frontend, no split between API and worker
 processes, one deployable unit.
@@ -156,12 +166,16 @@ startup. Re-checked against Principle VI: it strengthens rather than threatens t
 because the test harness already applies migrations explicitly to its throwaway database
 (FR-018) rather than relying on a boot-time side effect.
 
-Research surfaced one thing the initial gate did not anticipate. `@libsql/client` is a
-SQLite-compatible **fork**, not SQLite, while the constitution's Scope section names SQLite. If
-the driver decision lands on libsql, that is a governance question rather than a purely
-technical one, and would require either a constitutional amendment or a written justification
-recorded here. That is exactly why the driver is left as NEEDS CLARIFICATION rather than
-quietly decided.
+Research surfaced one thing the initial gate did not anticipate: `@libsql/client` is a
+SQLite-compatible **fork**, not SQLite, while the constitution's Scope section names SQLite.
+Selecting it would have been a governance question rather than a purely technical one.
+
+**That question is now moot.** The selected driver reports SQLite 3.53.4, genuine SQLite, so
+**no constitutional amendment is required**. The experiment also verified the two foundation
+obligations directly rather than by inference: the driver reports a changed-row count, which
+Principle II decides a 409 from, and it supports native transactions, which Principle III needs
+for per-chunk commits. Both are now demonstrated rather than assumed, which is the strongest
+form this gate has been in.
 
 ## Project Structure
 
