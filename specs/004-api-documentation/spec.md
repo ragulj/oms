@@ -18,6 +18,35 @@ description that drifts, and a confidently wrong description is worse than none,
 who reads no documentation writes a probe and a caller who reads wrong documentation writes a bug.
 Most of what follows exists to make drift detectable rather than to make the page look complete.
 
+## Clarifications
+
+### Session 2026-09-05
+
+- Q: Where are the interactive page and the machine-readable document served? → A: at `/docs` and
+  `/docs-json`, both excluded from the `/api/v1` prefix exactly as the health endpoint is. Chosen
+  because the document describes the API surface rather than forming part of it, so putting a version
+  in its own path is a category error: the document would have to move when the API version moved,
+  and every bookmark, README link and startup log line would move with it. It also matches the
+  precedent Spec 001 already set, where a path that outlives the version sits outside the prefix.
+- Q: Prefilled examples were required to succeed on a reviewer's first execution, while the
+  assumptions said example values are not asserted to resolve against any database. Which holds? →
+  A: the guarantee holds and the assumption is withdrawn. The seeding command commits to producing a
+  documented, stable set of customer and product identifiers, examples use exactly those, and a test
+  asserts the seed still produces them. Chosen because the alternative makes the page's first
+  execution fail by default, which is the opposite of the impression the feature exists to create,
+  and because an example nobody can run is a screenshot rather than a playground.
+- Q: Where does the check for a stale committed export run? → A: inside the repository's single
+  verification command, alongside formatting, linting and type checking. Chosen because a drifted
+  document is a correctness defect of the same kind as a type error, and a gate that has to be
+  remembered separately is a gate that eventually is not. The cost is that the command must build
+  the document, which is accepted.
+- Q: A server error is representable but cannot be provoked by any input a caller can construct, so
+  documenting it per operation would create documented responses that no test can exercise. How is
+  that resolved? → A: the server-error response is described once at document level and is not listed
+  on any individual operation. Chosen so that every per-operation response stays reachable and the
+  criterion requiring every documented failure to be provoked keeps its full force; a criterion whose
+  worth is that it admits no exceptions should not be given one.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Understand the API Without Reading the Source (Priority: P1)
@@ -152,8 +181,10 @@ into an independent viewer, and confirm it is valid and self-contained.
 - **Mounting documentation must not change any existing response.** Spec 003 changed the health
   response body by scoping an exception filter too widely, and only a Spec 001 test caught it. Adding
   a page, a document route, and static assets is the same class of change.
-- **Path collision.** The documentation paths must not shadow an API route, be captured by the global
-  version prefix, or be intercepted by the order module's error handling.
+- **Path collision and the version prefix.** `/docs` and `/docs-json` must not shadow an API route, be
+  captured by the global version prefix, or be intercepted by the order module's error handling. A
+  prefix exclusion is silently correct right up until someone adds a second excluded path or a second
+  prefix, which is why FR-060a makes it an assertion rather than a line of configuration.
 - **Money rendered as a decimal.** Every monetary field is an integer count of minor units. An example
   showing `41.96` or `"41.96"` teaches a reader precisely the mistake Constitution Principle IV
   exists to prevent, and would be believed because it appears in the official description.
@@ -260,8 +291,8 @@ into an independent viewer, and confirm it is valid and self-contained.
 #### Failure documentation
 
 - **FR-031**: The single error body MUST be documented once and referenced by every failure response.
-- **FR-032**: Every operation MUST document each status code it can return together with the
-  condition that produces it.
+- **FR-032**: Every operation MUST document each status code it can return in response to a request a
+  caller can construct, together with the condition that produces it.
 - **FR-033**: No operation MUST document a status code outside the set the service can return for it.
 - **FR-034**: The document MUST record the complete set of machine-readable failure codes, and each
   operation MUST name the subset it can emit.
@@ -271,8 +302,10 @@ into an independent viewer, and confirm it is valid and self-contained.
   non-validation failures as carrying an empty detail list.
 - **FR-037**: The document MUST record that no error body contains a stack trace, a driver message, a
   query fragment, or a filesystem path.
-- **FR-038**: The document MUST record that for the order API no input a caller can construct produces
-  a server error, while still documenting that a server error is representable.
+- **FR-038**: The document MUST describe the server-error response once at document level and MUST NOT
+  list it on any individual operation, while recording that for the order API no input a caller can
+  construct produces one. Listing it per operation would put a response on every operation that no
+  test can provoke, which would force SC-003 to carry an exemption.
 - **FR-039**: The conflict produced by cancelling an order that is not cancellable MUST be documented
   as covering both a late caller and a transition that was never legal, since those are the same fact.
 - **FR-040**: The health endpoint's unhealthy status code MUST be documented, and MUST be permitted by
@@ -312,8 +345,13 @@ into an independent viewer, and confirm it is valid and self-contained.
   that the service returned.
 - **FR-052**: The page MUST allow a value to be supplied for every documented request header and query
   parameter, including the idempotency and correlation headers.
-- **FR-053**: The page MUST offer a prefilled example request for each operation that is valid against
-  a freshly seeded catalog, so a reviewer's first execution succeeds without them composing a body.
+- **FR-053**: The page MUST offer a prefilled example request for each operation that succeeds against
+  a freshly seeded catalog, so a reviewer's first execution works without them composing a body or
+  substituting an identifier.
+- **FR-053a**: The seeding command MUST produce a documented, stable set of customer and product
+  identifiers, and the prefilled examples MUST use exactly those. A test MUST assert that the seed
+  still produces them, so a later change to the seed fails a check rather than silently breaking the
+  page's first request.
 - **FR-054**: The page MUST make clear that repeating a creation without an idempotency key creates a
   second order.
 - **FR-055**: The page MUST be served from the same origin as the API, so no cross-origin
@@ -329,8 +367,11 @@ into an independent viewer, and confirm it is valid and self-contained.
   every other setting the service recognises.
 - **FR-059**: When the setting disables documentation, both the page and the machine-readable route
   MUST report that they do not exist, and the service MUST start and serve the API unchanged.
-- **FR-060**: The path at which the documentation is served MUST be documented and MUST NOT collide
-  with, shadow, or be shadowed by any API route.
+- **FR-060**: The interactive page MUST be served at `/docs` and the machine-readable document at
+  `/docs-json`, both excluded from the `/api/v1` prefix exactly as the health endpoint is.
+- **FR-060a**: Neither documentation path may collide with, shadow, or be shadowed by an API route,
+  and neither may acquire the version prefix. The exclusion MUST be asserted by a test, since it is a
+  configuration that is silently correct until the day someone adds a second prefix.
 - **FR-061**: The service MUST record the documentation address in its startup output when
   documentation is enabled, so a developer does not have to guess or search for it.
 - **FR-062**: The repository's own developer documentation MUST state how to reach the page, in the
@@ -343,8 +384,9 @@ into an independent viewer, and confirm it is valid and self-contained.
 - **FR-064**: The machine-readable document MUST be obtainable without starting the service.
 - **FR-065**: The exported document MUST be committed to the repository so that a change to the API
   surface appears as a reviewable difference.
-- **FR-066**: A check MUST fail when the committed export differs from what the implementation would
-  produce, in the same way the project's existing schema check fails on an uncommitted schema change.
+- **FR-066**: The repository's single verification command MUST fail when the committed export differs
+  from what the implementation would produce, so a drifted document is caught by the same gate as a
+  formatting, linting or type error and cannot reach a commit unnoticed.
 - **FR-067**: The document served over HTTP and the committed export MUST describe the same surface.
 - **FR-068**: The exported document MUST be self-contained, resolving no external references.
 
@@ -415,7 +457,9 @@ None of these are persisted. This feature adds no table, no column, and no migra
 - **SC-002**: Every machine-readable failure code the service can emit appears in the document. Zero
   omissions.
 - **SC-003**: For every documented failure, provoking it against the running service produces exactly
-  the documented status code and failure code, in 100% of documented cases.
+  the documented status code and failure code, in 100% of documented cases. This criterion carries no
+  exemption, which is why FR-038 documents the unprovokable server-error response once at document
+  level rather than on each operation.
 - **SC-004**: Zero documented monetary fields are typed or exemplified as non-integers, and zero
   documented timestamp fields are typed or exemplified as formatted dates.
 - **SC-005**: A reviewer who has not seen the system can place an order, read it back, list orders,
@@ -429,7 +473,7 @@ None of these are persisted. This feature adds no table, no column, and no migra
 - **SC-008**: The exported document is a valid OpenAPI document that loads in an independent viewer
   with zero unresolved references.
 - **SC-009**: The committed export and the document the implementation produces are identical, and the
-  check reports a difference when they are not.
+  repository's verification command fails on any difference between them.
 - **SC-010**: With documentation disabled, the documentation paths report not found and the full
   pre-existing test suite still passes.
 - **SC-011**: Removing any single documentation guarantee turns the suite red, measured by mutating
@@ -453,10 +497,13 @@ None of these are persisted. This feature adds no table, no column, and no migra
   the reviewer's first useful surface. The setting exists so that a future deployment outside this
   scope can turn it off without a code change.
 - The `customers` and `products` tables remain the Spec 002 placeholders with no HTTP surface, so the
-  document describes no endpoint over them. Prefilled examples assume the identifiers the existing
-  seeding command creates.
-- The documented example values are illustrative and are not asserted to exist in any particular
-  database. Their internal arithmetic is asserted; their resolvability is not.
+  document describes no endpoint over them. Prefilled examples use the identifiers the existing
+  seeding command creates. This feature adds a stability guarantee to that command without changing
+  what it writes.
+- Prefilled examples resolve against a seeded database. Both their internal arithmetic and their
+  resolvability after seeding are asserted. Against an unseeded database they do not resolve, and the
+  service reports that as a missing customer or product, which is correct behaviour rather than a
+  documentation defect.
 - Adding a documentation capability requires a dependency the project does not currently have. This is
   accepted as inherent to the feature rather than treated as a deviation, and the choice of which one
   belongs to the planning phase.
