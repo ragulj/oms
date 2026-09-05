@@ -12,9 +12,7 @@ export interface DocsHarness extends LifecycleHarness {
  * suites assert about is what the service publishes rather than a document
  * assembled for the occasion.
  */
-export async function createDocsHarness(
-  env: Record<string, string> = {},
-): Promise<DocsHarness> {
+export async function createDocsHarness(env: Record<string, string> = {}): Promise<DocsHarness> {
   const harness = await createLifecycleHarness({ DOCS_ENABLED: 'true', ...env });
   if (!harness.document) {
     throw new Error('The harness mounted no document. DOCS_ENABLED was not honoured.');
@@ -83,7 +81,10 @@ interface ExpressLayer {
  */
 export function routedOperations(server: unknown): RoutedOperation[] {
   const instance = (server as { _events?: { request?: unknown } })._events?.request ?? server;
-  const app = instance as { router?: { stack: ExpressLayer[] }; _router?: { stack: ExpressLayer[] } };
+  const app = instance as {
+    router?: { stack: ExpressLayer[] };
+    _router?: { stack: ExpressLayer[] };
+  };
   const router = app.router ?? app._router;
   if (!router) {
     throw new Error('No Express router found. The adapter or Express major version changed.');

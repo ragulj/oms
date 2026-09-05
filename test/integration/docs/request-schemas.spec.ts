@@ -107,11 +107,11 @@ describe('request schemas are derived from what actually validates', () => {
   });
 
   it('documents the three listing parameters and no others (FR-019)', () => {
-    expect(listParameters().map((parameter) => parameter.name).sort()).toEqual([
-      'cursor',
-      'limit',
-      'status',
-    ]);
+    expect(
+      listParameters()
+        .map((parameter) => parameter.name)
+        .sort(),
+    ).toEqual(['cursor', 'limit', 'status']);
   });
 
   it('records that offset-style paging is rejected rather than ignored (FR-019)', () => {
@@ -142,7 +142,9 @@ describe('request schemas are derived from what actually validates', () => {
       (candidate) => candidate.operationId === 'getOrder',
     );
     const responses = get?.operation.responses as Record<string, JsonRecord>;
-    expect(String(responses['400']?.description)).toMatch(/malformed request rather than a missing/i);
+    expect(String(responses['400']?.description)).toMatch(
+      /malformed request rather than a missing/i,
+    );
   });
 
   it('documents the idempotency key bounds the service enforces (FR-041)', () => {

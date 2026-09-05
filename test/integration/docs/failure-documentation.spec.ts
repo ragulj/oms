@@ -54,7 +54,9 @@ describe('failures are documented exactly as they can occur', () => {
 
   it('describes the server-error possibility once, at document level', () => {
     expect(harness.document.info.description).toMatch(/`500`/);
-    expect(harness.document.info.description).toMatch(/no input a caller can\s+construct produces/i);
+    expect(harness.document.info.description).toMatch(
+      /no input a caller can\s+construct produces/i,
+    );
   });
 
   it('advertises only codes that exist', () => {
@@ -98,8 +100,7 @@ describe('failures are documented exactly as they can occur', () => {
   it('documents the closed status set for the order API and admits 503 only for health', () => {
     for (const operation of documentedOperations(harness.document)) {
       const statuses = statusesOf(operation.operation);
-      const permitted =
-        operation.path === '/health' ? [200, 503] : [200, 201, 400, 404, 409, 500];
+      const permitted = operation.path === '/health' ? [200, 503] : [200, 201, 400, 404, 409, 500];
       for (const status of statuses) {
         expect(permitted).toContain(status);
       }
@@ -139,6 +140,8 @@ describe('failures are documented exactly as they can occur', () => {
     expect(String((properties.message as JsonRecord).description)).toMatch(
       /never contains a stack trace/i,
     );
-    expect(String((properties.details as JsonRecord).description)).toMatch(/empty array otherwise/i);
+    expect(String((properties.details as JsonRecord).description)).toMatch(
+      /empty array otherwise/i,
+    );
   });
 });
