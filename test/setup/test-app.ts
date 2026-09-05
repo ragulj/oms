@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../src/app.module';
 import { loadConfig } from '../../src/config/configuration';
 import { createConnection, type Connection } from '../../src/database/client';
+import { correlationMiddleware } from '../../src/http/correlation';
 import { StructuredLogger } from '../../src/logging/logger';
 import { TEST_DB_PATH } from './database';
 
@@ -21,7 +22,7 @@ export interface TestHarness {
 export async function createTestApp(env: Record<string, string> = {}): Promise<TestHarness> {
   const config = loadConfig({
     DATABASE_PATH: TEST_DB_PATH,
-    // Long enough that no heartbeat fires unless a test asks for one.
+    // Long enough that no promotion tick fires unless a test asks for one.
     SCHEDULER_INTERVAL_MS: '3600000',
     ...env,
   } as NodeJS.ProcessEnv);
@@ -35,6 +36,8 @@ export async function createTestApp(env: Record<string, string> = {}): Promise<T
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger });
+  // Identical to main.ts, so the graph a test drives is the graph that ships.
+  app.use(correlationMiddleware);
   app.setGlobalPrefix('api/v1', { exclude: ['health'] });
   await app.init();
 

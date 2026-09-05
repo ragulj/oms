@@ -164,3 +164,41 @@ export function seedManyOrders(
 
   return { customerId, productId, orderCount, sharedTimestampUs };
 }
+
+/**
+ * A backlog of orders in one status, for the bounded-tick assertions. Every
+ * order gets one line, because Spec 002's model has no order without lines and
+ * contract obligation O1 says a fixture must not create one.
+ */
+export function seedOrdersInStatus(
+  connection: Connection,
+  count: number,
+  status: OrderStatus = 'pending',
+  baseUs = 1_700_000_000_000_000,
+): { customerId: number; productId: number; orderIds: number[] } {
+  const customerId = insertCustomer(connection, `Backlog Customer ${status}`);
+  const productId = insertProduct(connection, `Backlog Widget ${status}`, 1000);
+
+  const insertOrderRow = connection.sqlite.prepare(
+    'INSERT INTO orders (customer_id, status, created_at_us, updated_at_us) VALUES (?, ?, ?, ?)',
+  );
+  const insertLineRow = connection.sqlite.prepare(
+    `INSERT INTO order_line_items
+       (order_id, product_id, product_description, unit_price_minor, quantity)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+
+  const orderIds: number[] = [];
+  connection.sqlite.transaction(() => {
+    for (let i = 0; i < count; i += 1) {
+      // Strictly increasing, so "oldest first" is a checkable claim.
+      const createdAtUs = baseUs + i;
+      const { lastInsertRowid } = insertOrderRow.run(customerId, status, createdAtUs, createdAtUs);
+      const orderId = Number(lastInsertRowid);
+      insertLineRow.run(orderId, productId, `backlog line ${i}`, 1000, 1);
+      orderIds.push(orderId);
+    }
+  })();
+
+  return { customerId, productId, orderIds };
+}

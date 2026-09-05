@@ -13,6 +13,7 @@
     "start:prod": "node dist/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node -r ts-node/register src/database/migrate.ts",
+    "db:seed": "node -r ts-node/register src/database/seed.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "check": "prettier --check . && eslint . && tsc --noEmit",
     "fix": "prettier --write . && eslint . --fix"

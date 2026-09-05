@@ -5,6 +5,7 @@ import { loadConfig, loadEnvFile } from './config/configuration';
 import { createConnection, type Connection } from './database/client';
 import { assertMigrationsCurrent } from './database/migration-state';
 import { StructuredLogger } from './logging/logger';
+import { correlationMiddleware } from './http/correlation';
 import { drain } from './lifecycle/shutdown';
 import { OverlapGuard } from './scheduler/overlap-guard';
 
@@ -73,6 +74,10 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule.register({ config, connection, logger }), {
     logger,
   });
+
+  // Spec 003 FR-007. Applied ahead of routing so a request that matches no
+  // controller still carries a correlation identifier into the error response.
+  app.use(correlationMiddleware);
 
   // FR-035: domain routes live under a versioned prefix; health stays outside it
   // so supervisors and probes never track the API version.

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { HeartbeatTask } from './heartbeat.task';
+import { OrderPromotionTask } from './order-promotion.task';
 import { OverlapGuard } from './overlap-guard';
 
 @Module({
   imports: [ScheduleModule.forRoot()],
-  providers: [HeartbeatTask, OverlapGuard],
-  exports: [HeartbeatTask, OverlapGuard],
+  providers: [OrderPromotionTask, OverlapGuard],
+  exports: [OrderPromotionTask, OverlapGuard],
 })
 export class SchedulerModule {}

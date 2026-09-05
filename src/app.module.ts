@@ -3,6 +3,7 @@ import type { AppConfig } from './config/config.schema';
 import type { Connection } from './database/client';
 import { StructuredLogger } from './logging/logger';
 import { HealthModule } from './health/health.module';
+import { OrdersModule } from './orders/orders.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { CONFIG, CONNECTION, LOGGER } from './tokens';
 
@@ -24,7 +25,7 @@ export class AppModule {
   static register(deps: AppDependencies): DynamicModule {
     return {
       module: AppModule,
-      imports: [HealthModule, SchedulerModule],
+      imports: [HealthModule, OrdersModule, SchedulerModule],
       providers: [
         { provide: CONFIG, useValue: deps.config },
         { provide: CONNECTION, useValue: deps.connection },

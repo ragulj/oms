@@ -1,5 +1,5 @@
 import { createConnection, type Connection } from '../../src/database/client';
-import { DELETABLE_TABLE_NAMES } from '../../src/database/schema';
+import { DELETABLE_TABLE_NAMES, PRE_REBUILD_TABLE_NAMES } from '../../src/database/schema';
 import { TEST_DB_PATH } from './database';
 import { captureSchema, rebuildTables } from './rebuild';
 
@@ -12,15 +12,20 @@ beforeAll(() => {
 });
 
 /**
- * FR-017 and FR-025c: every test starts from a known empty state, by whichever
- * mechanism the table permits.
+ * FR-017, FR-025c, and Spec 003 FR-102: every test starts from a known empty
+ * state, by whichever mechanism each table permits.
  *
- * The rebuild runs first. It drops the order tables, which is what releases the
- * foreign key references into customers and products and lets those be cleared
- * by deletion straight after.
+ * Three phases, and the order is load-bearing in both directions. Idempotency
+ * records reference orders, and SQLite refuses to drop a table while a foreign
+ * key still points at it, so they go first. The rebuild then drops the order
+ * tables, which releases the references into customers and products, so those
+ * can only be cleared afterwards.
  */
 beforeEach(() => {
   if (!connection) return;
+  for (const table of PRE_REBUILD_TABLE_NAMES) {
+    connection.sqlite.exec(`DELETE FROM ${table}`);
+  }
   rebuildTables(connection.sqlite, schemaStatements);
   for (const table of DELETABLE_TABLE_NAMES) {
     connection.sqlite.exec(`DELETE FROM ${table}`);

@@ -20,6 +20,11 @@ export const configSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   SCHEDULER_INTERVAL_MS: positiveInt('SCHEDULER_INTERVAL_MS').default(300_000),
   SHUTDOWN_DRAIN_TIMEOUT_MS: positiveInt('SHUTDOWN_DRAIN_TIMEOUT_MS').default(10_000),
+
+  // Their product, 1000 orders per tick, is the blocking-time budget Constitution
+  // Principle III is about, not a throughput target.
+  ORDER_PROMOTION_CHUNK_SIZE: positiveInt('ORDER_PROMOTION_CHUNK_SIZE').default(100),
+  ORDER_PROMOTION_MAX_ITERATIONS: positiveInt('ORDER_PROMOTION_MAX_ITERATIONS').default(10),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
