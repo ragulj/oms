@@ -27,10 +27,11 @@ describe('the promotion tick lifecycle', () => {
 
     const [record] = harness.records('order.promotion.tick');
 
-    // 100, then 50, then a zero-row claim that ends the tick.
+    // 100, then 50. The second claim comes back short of the chunk size, which
+    // ends the tick; Spec 005 removed the third claim that used to confirm it.
     expect(record).toMatchObject({
       task: 'order-promotion',
-      iterations: 3,
+      iterations: 2,
       promoted: 150,
       capReached: false,
     });

@@ -93,9 +93,10 @@ describe('a background tick is bounded', () => {
       const result = task.runTick();
 
       expect(result.promoted).toBe(5);
-      // One chunk of 5, then a zero-row claim that ends the tick, with the third
-      // permitted iteration unspent.
-      expect(result.iterations).toBe(2);
+      // Spec 005: one claim. It came back short of the chunk size, which proves
+      // no sixth order was waiting, so the tick ends there. It used to spend a
+      // second claim confirming that.
+      expect(result.iterations).toBe(1);
       expect(result.capReached).toBe(false);
       expect(countByStatus(harness, 'pending')).toBe(0);
     });

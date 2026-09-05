@@ -144,10 +144,16 @@ describe('the bounded backlog claim', () => {
 
     const result = task.runTick();
 
-    // Four chunks of 100, 100, 100, 50, then a fifth claim that finds nothing and
-    // ends the tick. FR-085 ends a tick on a zero-row claim, not on a short one:
-    // a short chunk is not evidence the backlog is empty.
-    expect(result.iterations).toBe(5);
+    // Four chunks: 100, 100, 100, 50. The fourth comes back short and ends the
+    // tick.
+    //
+    // Spec 003 ended a tick only on a zero-row claim, on the reasoning that a
+    // short chunk was not evidence of an empty backlog — the outer status
+    // predicate might have excluded an order cancelled mid-statement. Spec 005
+    // measured that (research R1) and found no such interval: the claim is one
+    // statement in one transaction on an engine that serialises writers, so a
+    // short chunk does prove the backlog is drained. The fifth claim is gone.
+    expect(result.iterations).toBe(4);
     expect(result.promoted).toBe(350);
     // Nothing left half-written: every claimed row is committed.
     expect(countByStatus('processing')).toBe(350);

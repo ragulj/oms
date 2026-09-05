@@ -14,11 +14,27 @@ export const PROMOTION_INTERVAL_NAME = 'order-promotion';
 /** FR-088: taken from the state machine, never written as a literal here. */
 const TARGET_STATUS: OrderStatus = 'processing';
 
+/**
+ * Spec 005 FR-023. Why a tick stopped, readable from its own record.
+ *
+ * `capReached` almost answers this already, but not quite: a drained tick and a
+ * failed tick both report `capReached: false`, so telling them apart meant going
+ * and finding whether an `order.promotion.failed` record existed beside it.
+ */
+export type TickStopReason =
+  /** A claim came back short of the chunk size, so no eligible order remained. */
+  | 'drained'
+  /** The iteration cap ended the tick. A backlog may remain. */
+  | 'guard'
+  /** A claim threw. Chunks already committed stay committed. */
+  | 'failed';
+
 export interface TickResult {
   iterations: number;
   promoted: number;
   capReached: boolean;
   durationMs: number;
+  stopReason: TickStopReason;
 }
 
 /**
@@ -99,16 +115,41 @@ export class OrderPromotionTask implements OnModuleInit, OnModuleDestroy {
 
     let iterations = 0;
     let promoted = 0;
+    // Only reassigned by the short-claim exit below. Left as the guard's value so
+    // that falling out of the `while` needs no separate assignment to be correct.
+    let stopReason: TickStopReason = 'guard';
 
     try {
+      // Spec 005. The cap stays in the loop condition deliberately, so that being
+      // bounded is a property of the loop's shape rather than of a `break` a later
+      // edit could move. Constitution Principle III calls the cap the safety
+      // property that keeps the process responsive, not a tuning knob: the driver
+      // is synchronous, so an unbounded claim loop would hold the single write
+      // lock and block the event loop for as long as it ran. The short-claim exit
+      // below fires first in every ordinary case, which is what demotes the cap
+      // from "how a tick ends" to "why a tick cannot fail to end".
       while (iterations < maxIterations) {
         const claimed = this.claimChunk(chunkSize);
         iterations += 1;
         promoted += claimed;
 
-        // FR-085: nothing left to claim, so the tick ends rather than spending
-        // its remaining iterations on empty statements.
-        if (claimed === 0) {
+        // Spec 005 FR-004, replacing Spec 003's `claimed === 0`.
+        //
+        // A claim short of the chunk size means fewer than a chunk of eligible
+        // orders existed when the statement ran, so the tick is finished. Spec 003
+        // believed a short chunk proved nothing, because the outer status
+        // predicate could exclude an order cancelled "between the subquery
+        // choosing it and the update reaching it", and so spent one further claim
+        // per tick confirming emptiness. Research R1 measured that interval and
+        // found it does not exist: the claim is a single statement in a single
+        // transaction on an engine that serialises writers, so no cancellation can
+        // interleave within it. The predicate is still required and still excludes
+        // an order cancelled *before* the tick; it simply cannot shorten a chunk.
+        //
+        // A full chunk is not evidence of anything, which is why this is `<` and
+        // not `<=`: the backlog may hold exactly one more chunk.
+        if (claimed < chunkSize) {
+          stopReason = 'drained';
           break;
         }
       }
@@ -121,14 +162,25 @@ export class OrderPromotionTask implements OnModuleInit, OnModuleDestroy {
         promoted,
         detail: error instanceof Error ? error.message : String(error),
       });
-      return { iterations, promoted, capReached: false, durationMs: Date.now() - startedAt };
+      return {
+        iterations,
+        promoted,
+        capReached: false,
+        durationMs: Date.now() - startedAt,
+        stopReason: 'failed',
+      };
     }
 
     const result: TickResult = {
       iterations,
       promoted,
+      // Unchanged. Note that a backlog of exactly chunk times cap fills every
+      // claim, never produces a short one, and so reports the guard while in fact
+      // being drained. That is today's behaviour and is correct: knowing otherwise
+      // would cost the very claim this feature removes (research R5).
       capReached: iterations >= maxIterations,
       durationMs: Date.now() - startedAt,
+      stopReason,
     };
 
     // FR-097

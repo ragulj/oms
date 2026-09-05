@@ -209,6 +209,36 @@ the document and the service cannot disagree here again.
 The lesson worth keeping: a test that asserts a document contains a *phrase* proves only that
 somebody wrote that phrase. Assert against the behaviour the phrase describes.
 
+### Spec 005: a defect no outcome could see
+
+Spec 005 removed one wasted claim per tick. Its sweep mutates `src/scheduler/order-promotion.task.ts`.
+
+**3 of 3 mutations turned the suite red**, and unlike Spec 004's sweep each was caught by a different
+suite, and by the suite actually written for it:
+
+| Mutation | Guarantee it removes | Caught by |
+| :--- | :--- | :--- |
+| `short-claim-exit` | a short claim ends the tick (FR-004) — the feature itself | `promotion.claim.spec.ts` |
+| `iteration-cap` | the cap bounds the tick (FR-008, FR-010, Principle III) | `promotion.bounded.spec.ts` |
+| `stop-reason-guard` | the guard is distinguishable from a drain in one record (FR-023) | `promotion.termination.spec.ts` |
+
+`iteration-cap` replaces `while (iterations < maxIterations)` with `while (true)`. It is the mutation
+worth keeping, because it is the exact edit a careless reading of the requirement invites: the
+specification asks for the cap to stop being the loop's condition, and doing that literally produces
+an unbounded claim loop on a synchronous driver, holding the single write lock for as long as it runs.
+The cap deliberately stays in the `while` and the short-claim exit fires first, so boundedness is a
+property of the loop's shape rather than of a `break` a later edit could move.
+
+**The promoted count cannot see this defect.** Before and after the fix, the same orders are promoted,
+in the same order, leaving the same rows behind. The only observable that moves is the number of
+claims performed, which is why `promotion.termination.spec.ts` asserts `iterations` directly in every
+case and states in a comment that a promotion-count assertion would pass identically against the
+defect and against the fix.
+
+That is the same lesson Spec 004 learned from the other direction, where a test asserted that a
+document contained a sentence rather than that the service behaved the way the sentence claimed. Both
+are the same mistake: asserting on something adjacent to the guarantee instead of on the guarantee.
+
 ### Suite runtime (SC-012)
 
 Results are identical across consecutive runs: 63 suites, 443 tests, all passing, every time.
