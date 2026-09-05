@@ -32,6 +32,9 @@ describe('shutdown drain', () => {
   it('closes the real application and its database without leaving recovery work', async () => {
     const harness = await createTestApp();
 
+    // FR-024 exemption: the teardown mechanism is the subject under test here, so drain must
+    // drive app.close directly. Routing through harness.close() would hide the very behaviour
+    // being asserted. Every resource this test opened is still released: the connection below.
     const result = await drain({
       guard: harness.app.get(OverlapGuard, { strict: false }),
       close: () => harness.app.close(),

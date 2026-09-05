@@ -309,6 +309,48 @@ loader configuration never touches. The block is retained as hardening against `
 dependencies (spec FR-003) and is knowingly **not** backed by a mutation. Spec FR-023 and SC-010 were
 amended to withdraw the claim; `research.md` R1 carries the full diagnosis.
 
+### Spec 006 Phase 8 — the Windows teardown failure that did not reproduce (FR-024–FR-026, SC-006)
+
+SC-006 promises the suite passes on Linux **and** on the previously supported environment. Only Linux
+was ever verified, and a Windows-only `EPERM` deleting the shared test database was reported after the
+feature closed. Phase 8 was written to diagnose it, under FR-025's rule that a remedy must be re-derived
+from evidence when the reported mechanism and the code disagree.
+
+**The reported failure does not reproduce.** On Windows 11, Node v24.19.0, npm 11.17.0, at `db8ee43`:
+three consecutive `npm test` runs gave **65/65 suites, 468/468 tests, exit 0**, no `globalTeardown`
+failure, and an empty `%TEMP%\oms-test\` afterwards — `removeTestDatabase` removed the database and both
+its `-wal` and `-shm` siblings every time.
+
+Two corrections the next reader should inherit:
+
+- The suite's database is **not** in `data/`. It is `join(tmpdir(), 'oms-test', 'oms-test.db')`
+  (`test/setup/database.ts:11-12`); `data/` holds only the development database. The Phase 8 task list
+  originally pointed the diagnosis at `data/oms-test.db`, which would have started it in the wrong
+  directory.
+- The likeliest reason the failure is gone is `51df411`, which made the HTTP harness bind its server
+  once for its lifetime instead of letting supertest bind lazily per request and close it again —
+  per-request bind-and-close is the shape that strands handles on Windows. That commit was motivated by
+  a Linux `ECONNRESET` race, so if it also fixed this, it did so as an unrecorded side effect. **This is
+  a hypothesis.** Confirming it needs a bisect to `93735c6`, which has not been run.
+
+The FR-024 hygiene changes went in regardless, because they stand on their own merit rather than as the
+remedy for this failure: the degraded application in `response-conformance.spec.ts` now releases through
+`degraded.close()`, and the one deliberate bypass in `shutdown.drain.spec.ts` now carries the comment
+FR-024's exemption requires. FR-026 was re-checked and holds — `removeTestDatabase` still issues a single
+`rmSync(path, { force: true })` per file, with no retry, backoff, or force-delete added to paper over a
+lock.
+
+**SC-006 is therefore not closed here.** The suite is green on both environments, but FR-025's acceptance
+rests on naming the retained resource, and no resource was named because nothing was retained. That
+disposition is recorded as owed in the task list rather than resolved by assertion.
+
+**A separate defect surfaced in the same run**: `npm run check` does not exit 0 on a Windows checkout.
+`prettier --check .` fails on 45 working-tree files whose line endings are CRLF — `git ls-files --eol`
+reports the index as `lf` throughout against a worktree of 45 `crlf`, 177 `lf` and 1 `mixed`, with
+`core.autocrlf=true` and no `.gitattributes`. Because `npm run check` chains with `&&`, eslint,
+`tsc --noEmit` and `openapi:check` never run. This is unrelated to Phase 8's edits, both of which pass
+prettier, but it means the check gate has only ever been proven on Linux.
+
 ### Suite runtime (SC-012)
 
 Results are identical across consecutive runs: 63 suites, 443 tests, all passing, every time.

@@ -309,7 +309,7 @@ describe('every real response conforms to its documented schema', () => {
         conforms(healthReportSchema, response.body, 'checkHealth 503');
         expect(errorBodySchema.safeParse(response.body).success).toBe(false);
       } finally {
-        await degraded.app.close();
+        await degraded.close();
       }
     });
   });
