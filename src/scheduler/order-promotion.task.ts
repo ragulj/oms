@@ -129,8 +129,14 @@ export class OrderPromotionTask implements OnModuleInit, OnModuleDestroy {
       // below fires first in every ordinary case, which is what demotes the cap
       // from "how a tick ends" to "why a tick cannot fail to end".
       while (iterations < maxIterations) {
-        const claimed = this.claimChunk(chunkSize);
+        // Spec 005 Convergence T035. Counted before the claim runs, not after it
+        // returns: a claim that throws has still been performed, and the
+        // termination contract's table counts a throw on batch `k` as `k` claims
+        // performed. Incrementing only on success left a throw on the very first
+        // claim reporting `iterations: 0`, contradicting both that table and
+        // data-model.md's "iterations >= 1 always" invariant.
         iterations += 1;
+        const claimed = this.claimChunk(chunkSize);
         promoted += claimed;
 
         // Spec 005 FR-004, replacing Spec 003's `claimed === 0`.

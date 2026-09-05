@@ -215,3 +215,18 @@ from a change that quietly stopped doing some of the work.
 - Do not commit while T025 is running.
 - This feature reverses a decision Spec 003 made deliberately and documented. T013, T020, T021 and
   T029 exist so the reversal is visible to the next reader rather than looking like drift.
+
+---
+
+## Phase 7: Convergence
+
+**Purpose**: Close the gap between the artifacts and the code, found by assessing the
+implementation against spec, plan, contract and data model after implementation.
+
+All three findings sit on the same untested area: the failure path. The drained and guard
+paths are covered thoroughly; `stopReason: 'failed'` was written from the specification and
+then never exercised, which is the exact failure mode FR-029 exists to prevent.
+
+- [X] T033 Assert the `failed` stop reason against a real provoked failure in `test/integration/lifecycle/promotion.lifecycle.spec.ts` or `promotion.termination.spec.ts`, and add it to the mutation sweep, since replacing it with `'drained'` currently leaves the suite green per FR-023, SC-010 and FR-029 (partial). Done: `promotion.lifecycle.spec.ts`'s "keeps committed chunks and ends the tick when a chunk fails" now asserts `result.iterations === 1`, `result.stopReason === 'failed'` and `result.capReached === false`. Verified load-bearing by mutation: reverting T035's fix turns this assertion red (`Expected: 1, Received: 0`); restored afterward and reconfirmed 39/39 green.
+- [X] T034 Decide and record whether `stopReason` must reach a structured record on the failure path per FR-023 (contradicts). The catch block returns early without emitting `order.promotion.tick`, so the value is observable only on the returned `TickResult`; either add it to the `order.promotion.failed` record or state in `contracts/scheduler-tick.md` that the record name carries the reason on that path. Done: recorded in `contracts/scheduler-tick.md`'s Log record section — the `message` field (`order.promotion.tick` vs `order.promotion.failed`, mutually exclusive per tick) is the distinguishing signal FR-023 requires; `stopReason` stays on `TickResult` for the direct caller and is deliberately not duplicated onto the failure log record.
+- [X] T035 Reconcile the failure-path iteration count with its two documentation sources per data-model.md invariant and contracts/scheduler-tick.md termination table (contradicts). `iterations += 1` runs after `claimChunk`, so a throw on the first claim returns `iterations: 0`, contradicting "iterations >= 1 always" and the table's claim of `k` claims for a throw on batch `k`. Either count the attempt or correct both documents, and assert whichever is chosen. Done: `iterations += 1` now runs before `claimChunk()` in `order-promotion.task.ts`, so a throw on batch `k` reports `iterations: k`, matching both documents. No document edit needed — the code now matches what was already written.

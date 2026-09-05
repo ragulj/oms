@@ -101,7 +101,20 @@ meanings; `stopReason` is added.
 }
 ```
 
-`order.promotion.failed` is unchanged and still emitted on the failure path.
+`order.promotion.failed` is unchanged and still emitted on the failure path, instead of
+`order.promotion.tick`, never alongside it.
+
+**Convergence decision (T034)**: FR-023 requires the stop reason to be readable from the record
+alone, without correlating separate records. On the failure path that requirement is met by the
+`message` field itself: `order.promotion.failed` is the third value of the same three-way outcome
+`order.promotion.tick`'s `stopReason` carries the other two for, and the two message names are
+mutually exclusive for a given tick. A reader does not need a second record to learn a tick failed;
+they need only the one record that was emitted, and its name is the answer. `stopReason` is
+therefore deliberately **not** duplicated onto `order.promotion.failed` — doing so would carry the
+same fact twice on every failure and invite the two to disagree. The returned `TickResult` (not
+logged directly, but available to a direct caller per FR-020) does carry `stopReason: 'failed'` for
+this same case, so the in-process caller and the log reader are told the same thing through the
+channel each of them actually reads.
 
 An operator reading one record can now answer "why did this tick stop?" without finding a second one.
 `stopReason: "guard"` on consecutive ticks is the signal that the backlog is not keeping up; before

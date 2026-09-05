@@ -132,6 +132,19 @@ describe('the promotion tick lifecycle', () => {
     expect(record).toMatchObject({ task: 'order-promotion' });
     expect(result!.promoted).toBe(0);
 
+    // Spec 005 Convergence T033/T035. The claim that throws is batch 1 of this
+    // tick, and the termination contract counts a throw on batch `k` as `k`
+    // claims performed, so `iterations` must be 1, never 0. Before T035 this
+    // reported 0, because the counter only advanced after a claim returned
+    // successfully. `stopReason` must be `'failed'` and nothing else: FR-023
+    // requires the reason a tick stopped to be readable without correlating
+    // records, and a mutation that quietly reported `'drained'` here (the
+    // no-more-work outcome, an entirely different fact) would otherwise leave
+    // this suite green. That is the guarantee this assertion exists to protect.
+    expect(result!.iterations).toBe(1);
+    expect(result!.stopReason).toBe('failed');
+    expect(result!.capReached).toBe(false);
+
     failing.connection.sqlite.exec('ALTER TABLE orders_hidden RENAME TO orders');
 
     // The earlier chunk's work survived the later failure.
