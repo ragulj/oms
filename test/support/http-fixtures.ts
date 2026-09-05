@@ -33,10 +33,20 @@ export async function createLifecycleHarness(
   env: Record<string, string> = {},
 ): Promise<LifecycleHarness> {
   const harness = await createTestApp(env);
+  const server = harness.app.getHttpServer() as Server;
+
+  // Bind once for the lifetime of the harness. supertest otherwise binds
+  // lazily per request (`listen(0)`) and closes the socket again when that
+  // request ends, so concurrent requests each observe an unbound server, race
+  // to bind it, and the losers surface as ECONNRESET. Binding up front makes
+  // concurrent and sequential requests behave identically.
+  await new Promise<void>((resolve) => {
+    server.listen(0, resolve);
+  });
 
   return {
     ...harness,
-    server: harness.app.getHttpServer() as Server,
+    server,
     catalog: () => {
       const { customerIds, productIds } = seed(harness.connection);
       return {
