@@ -260,10 +260,14 @@ to the documented component, and the same schema validates a real response:
 | The same object plus a `createdAt` ISO string | **failure** |
 
 **Decision**: response shapes are declared once as strict zod schemas that exist for documentation and
-verification, and every integration test that receives a response parses it through the matching
-schema. This is FR-012's "asserted by a test that fails when they diverge", made concrete: adding a
-field to a response without documenting it fails, and documenting a field the response does not carry
-fails too.
+verification, and a dedicated conformance suite drives every response-producing operation and parses
+each real response through the matching schema. This is FR-012's "asserted by a test that fails when
+they diverge", made concrete: adding a field to a response without documenting it fails, and
+documenting a field the response does not carry fails too.
+
+**Not** by retrofitting the parse into Spec 003's existing suites. FR-075 requires those to pass
+unmodified and treats any need to edit them as evidence of an unintended behaviour change, so this
+feature adds coverage beside them rather than inside them.
 
 **Alternative rejected**: hand-writing the response components and eyeballing them against the
 controller. That is the drift this whole specification exists to prevent.
