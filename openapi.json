@@ -238,7 +238,12 @@
                       "code": "CUSTOMER_NOT_FOUND",
                       "message": "No customer exists with identifier 9999.",
                       "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
-                      "details": []
+                      "details": [
+                        {
+                          "field": "customerId",
+                          "message": "No customer with identifier 9999."
+                        }
+                      ]
                     }
                   },
                   "PRODUCT_NOT_FOUND": {
@@ -246,7 +251,12 @@
                       "code": "PRODUCT_NOT_FOUND",
                       "message": "No product exists with identifier 9999.",
                       "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
-                      "details": []
+                      "details": [
+                        {
+                          "field": "lines.productId",
+                          "message": "No product with identifier 9999."
+                        }
+                      ]
                     }
                   },
                   "ORDER_TOTAL_NOT_REPRESENTABLE": {
@@ -262,7 +272,12 @@
                       "code": "INVALID_IDEMPOTENCY_KEY",
                       "message": "The Idempotency-Key header must be 8 to 255 characters of A-Z, a-z, 0-9, hyphen or underscore.",
                       "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
-                      "details": []
+                      "details": [
+                        {
+                          "field": "Idempotency-Key",
+                          "message": "Use 8 to 255 characters of A-Z, a-z, 0-9, hyphen, or underscore."
+                        }
+                      ]
                     }
                   }
                 }
@@ -429,7 +444,12 @@
                       "code": "INVALID_CURSOR",
                       "message": "The cursor is malformed.",
                       "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
-                      "details": []
+                      "details": [
+                        {
+                          "field": "cursor",
+                          "message": "Use the nextCursor value from a previous page."
+                        }
+                      ]
                     }
                   }
                 }
@@ -985,7 +1005,7 @@
             "items": {
               "$ref": "#/components/schemas/ErrorDetail"
             },
-            "description": "Per-field problems on a validation failure, and an empty array otherwise."
+            "description": "Names the request fields responsible, where the failure can be attributed to one. Populated for VALIDATION_FAILED, CUSTOMER_NOT_FOUND, PRODUCT_NOT_FOUND, INVALID_CURSOR and INVALID_IDEMPOTENCY_KEY. Empty for ORDER_NOT_FOUND, TRANSITION_NOT_PERMITTED, IDEMPOTENCY_KEY_REUSED and ORDER_TOTAL_NOT_REPRESENTABLE, which concern the state of the system rather than a field you sent."
           }
         },
         "required": [

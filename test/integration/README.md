@@ -130,7 +130,110 @@ choosing it and the update reaching it. `cursor-validation` replaces a rejection
 at page one, which returns a plausible page rather than an error, and is the kind of defect a
 happy-path test never sees.
 
-**Do not commit while the sweep is running.** It mutates files in place and restores them at the end,
+### Spec 004: documentation, where a green suite is the easy failure
+
+A documentation feature can look finished while being wrong, and its tests can look thorough while
+asserting nothing. Spec 004's sweep mutates `src/docs/`, the two controllers, the configuration
+schema, the seed, and the committed `openapi.json`.
+
+**17 of 17 mutations turned the suite red.**
+
+| Mutation | Guarantee it removes |
+| :--- | :--- |
+| `global-500` | no operation carries an unprovokable server error (FR-038) |
+| `security-scheme` | no credential input is rendered (FR-047, FR-048) |
+| `server-list` | the page executes against its own origin only (FR-055) |
+| `use-global-prefix` | the documentation paths sit outside the version prefix (FR-060a) |
+| `no-strict-request` | request schemas publish that unknown properties are rejected (FR-015) |
+| `hand-written-limit` | the documented page-size bounds are the enforced ones (FR-010, FR-018) |
+| `decimal-money-example` | no monetary example is a decimal (FR-023, Principle IV) |
+| `date-time-format` | no timestamp is rendered as a formatted date (FR-024, Principle V) |
+| `cursor-encoding-described` | the cursor is opaque and its encoding is not described (FR-027) |
+| `drop-error-code` | each operation names every code it can emit (FR-034, SC-003) |
+| `response-schema-drift` | the documented response shape is the real one (FR-009, FR-012) |
+| `undocumented-route` | every routed operation appears in the document (FR-076, SC-001) |
+| `location-header` | the `Location` header on creation is documented (FR-044) |
+| `correlation-header` | the correlation header is documented on failures too (FR-043) |
+| `coerce-boolean` | the string `false` switches documentation off (FR-059) |
+| `seed-identifier-drift` | the prefilled examples name identifiers the seed creates (FR-053a) |
+| `stale-export` | the committed export matches the served document (FR-067, FR-083) |
+
+**What this run proves, and what it does not.** The sweep ran with `--bail`, which stops at the first
+failing file, and it records only that file. `export-parity.spec.ts` was the recorded catcher for 11
+of the 17, because it runs early and compares the whole document to the committed export, so **any**
+change to the document trips it.
+
+That is enough for SC-011 as written: removing any guarantee turns the suite red, and none of the
+seventeen slipped through. It is *not* evidence that each targeted assertion is individually
+load-bearing. `conventions.spec.ts` may or may not be what catches a decimal money example; this run
+cannot say, because export-parity got there first. Establishing that needs a re-run with
+export-parity excluded, so each mutation has to be caught by the suite written for it. That re-run has
+not been done, and this paragraph exists so nobody reads the table above as saying otherwise.
+
+Three mutations are worth naming.
+
+`coerce-boolean` and `global-500` are the two traps in this feature that **report success while being
+wrong**. `z.coerce.boolean()` turns the string `'false'` into `true`, so the setting reads as honoured
+while the page is served; `DocumentBuilder.addGlobalResponse` reads as "one response at document
+level" and in fact copies it into every operation. Neither produces an error, a warning, or a log
+line. Both are in the sweep because a comment saying "do not do this" is not a check.
+
+`response-schema-drift` removes one property from the response schema and is caught because every
+integration test parses its real response through that schema. It is the mutation that justifies the
+one place this feature accepts describing something twice.
+
+### What the sweep did not catch, and the quickstart did
+
+Spec 004's suite went green, all 17 mutations went red, and the published document was still wrong.
+
+`ErrorBody.details` was described as carrying "per-field problems on a validation failure, and an
+empty array otherwise". Five codes carry detail, not one: `VALIDATION_FAILED`, `CUSTOMER_NOT_FOUND`,
+`PRODUCT_NOT_FOUND`, `INVALID_CURSOR` and `INVALID_IDEMPOTENCY_KEY`, two of which name a header or a
+query parameter rather than a body field. Four published examples showed `details: []` for responses
+that in reality carry an entry.
+
+Nothing in the suite could see it. `response-conformance.spec.ts` parsed real bodies through the
+schema, and the schema was right — `details` is an array either way, so a wrong *description* passes a
+structural check. Worse, `failure-documentation.spec.ts` asserted the description matched
+`/empty array otherwise/i`, so the test did not merely miss the defect, it **pinned it in place**. A
+mutation sweep cannot find this either: removing a false claim does not turn a suite red.
+
+Walking `quickstart.md` against a running service found it in one command, by reading a response
+instead of asserting about one.
+
+Both have been corrected, and the replacement assertions were verified by re-introducing the defect
+and confirming two suites turn red. The general assertion now provokes all eight caller-reachable
+codes and compares each one's detail list against what the published description promises for it, so
+the document and the service cannot disagree here again.
+
+The lesson worth keeping: a test that asserts a document contains a *phrase* proves only that
+somebody wrote that phrase. Assert against the behaviour the phrase describes.
+
+### Suite runtime (SC-012)
+
+Results are identical across consecutive runs: 63 suites, 443 tests, all passing, every time.
+
+The runtime increment this feature adds could **not** be measured reliably on this machine. Five runs
+of the identical full suite reported 176.9 s, 73.7 s, 22.3 s, 71.6 s and 21.8 s — an eightfold spread
+on unchanged content, dominated by ts-jest transform-cache state and background load rather than by
+the tests. A paired alternating measurement made that plain:
+
+| Pass | Full (63 suites, 443 tests) | Without docs (48 suites, 292 tests) | Apparent increment |
+| :--- | ---: | ---: | ---: |
+| 1 | 71.6 s | 89.0 s | **−17.4 s** |
+| 2 | 21.8 s | 15.3 s | +6.5 s |
+
+Pass 1 reports the smaller suite as slower, which is impossible and is the measurement disqualifying
+itself. The honest statement is that the increment is smaller than this environment's run-to-run
+variance. Pass 2, the least-loaded pair, puts it at roughly 6 s for 15 suites and 151 tests, and a
+warm full run at about 22 s, comfortably inside the two-minute advisory budget. Treat the 6 s as an
+order of magnitude, not a measurement.
+
+Spec 003 recorded a 5.96 s suite on a quiet machine. If a precise figure is ever needed, measure with
+the transform cache warmed and nothing else running, and take a median of five rather than one
+sample.
+
+**Do not commit while a sweep is running.** It mutates files in place and restores them at the end,
 so a commit taken mid-sweep captures a mutated file. That happened once here: commit `d046448`
 captured the `expected-status` mutation and `5706e5c` restores it. Let the sweep finish before
 touching git.

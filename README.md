@@ -34,6 +34,18 @@ npm run start:dev
 Then check `http://localhost:3000/health`. No database server to install and no C++ toolchain
 required: the SQLite driver ships prebuilt binaries.
 
+For anything beyond that, open **`http://localhost:3000/docs`**. That is the whole API, executable
+from the browser: every operation, its request and response shapes, and every failure it can return.
+The startup log line names the address too, so you never have to guess it.
+
+```bash
+npm run db:seed     # so the prefilled examples on the page resolve
+```
+
+Seeding is worth doing before you try anything from the page. The examples are prefilled with real
+customer and product identifiers, and those identifiers are the ones this command creates, so with a
+seeded catalog the first request you execute succeeds instead of returning `PRODUCT_NOT_FOUND`.
+
 ### Commands
 
 | Command | What it does |
@@ -44,8 +56,11 @@ required: the SQLite driver ships prebuilt binaries.
 | `npm run start:prod` | Run the compiled build |
 | `npm run db:generate` | Generate a migration from the Drizzle schema |
 | `npm run db:migrate` | Apply pending migrations |
+| `npm run db:seed` | Create the customers and products the documentation examples name |
+| `npm run openapi:export` | Regenerate the committed `openapi.json` |
+| `npm run openapi:check` | Fail if `openapi.json` no longer matches the implementation |
 | `npm test` | Run the integration suite against a real database |
-| `npm run check` | Format, lint, and type check. Non-zero exit on any violation |
+| `npm run check` | Format, lint, type check, and check the exported contract. Non-zero exit on any violation |
 | `npm run fix` | Correct what can be corrected mechanically |
 
 ### Configuration
@@ -56,6 +71,43 @@ exits non-zero naming the offender.
 
 `DATABASE_PATH` is required. `PORT`, `LOG_LEVEL`, `SCHEDULER_INTERVAL_MS`, and
 `SHUTDOWN_DRAIN_TIMEOUT_MS` default to 3000, `info`, five minutes, and ten seconds.
+`DOCS_ENABLED` defaults to true.
+
+### The API documentation
+
+| Address | What it serves |
+| :--- | :--- |
+| `/docs` | The interactive page. Every operation is executable against the running service |
+| `/docs-json` | The same contract as OpenAPI 3.1 JSON |
+| `/docs-yaml` | The same contract as YAML |
+
+All three sit outside the `/api/v1` prefix, so they do not move when the API version does.
+
+Set `DOCS_ENABLED=false` to switch all three off. The whole system is unauthenticated within its
+declared scope, so gating the page would protect nothing; the setting exists so a deployment outside
+that scope can turn it off. With it off, the three paths are indistinguishable from paths that were
+never routed, and the API is untouched.
+
+**Taking the contract elsewhere.** `openapi.json` at the repository root is the same document,
+committed. Read it, diff it across commits, or load it into any OpenAPI tool without starting the
+service or having a database. It is generated, never hand-edited:
+
+```bash
+npm run openapi:export
+```
+
+`npm run check` regenerates it and fails if the committed file differs, so a change to a route, a
+validation bound or a response shape cannot ship with a document that still describes the old one.
+If that gate fails, run the command above and commit the result. Editing `openapi.json` by hand
+fails the same gate on the next run.
+
+**The document is derived, not written.** Request shapes and their bounds come from the zod schemas
+the service validates with, so `maxItems: 100` and the quantity ceiling in the document are the
+constants the service enforces rather than numbers someone typed twice. Response shapes are the one
+exception, because `OrderView` is a TypeScript interface with nothing left at runtime to derive
+from; they are declared as strict schemas, and every integration test parses its real response
+through the same schema the document publishes. A response that gains an undocumented field fails,
+and so does a documented field the response does not send.
 
 ### Two deliberate behaviours worth knowing
 
@@ -87,3 +139,9 @@ Where I overrode the AI's first instinct, and why.
 | **Database Error Classification** | Spec 003 | N/A | SQLite and `better-sqlite3` error classification remain implementation-specific. | The current persistence engine is intentionally SQLite, so a database adapter abstraction is deferred. |
 | **Internal Failure Observability** | Spec 003 | N/A | Clients receive only a generic `INTERNAL_ERROR` response and correlation ID. Production centralised logging, alerting, audit, and error monitoring are deferred. | Internal details remain in structured application logs. Health reports dependency availability rather than exposing exception details. |
 | **Customer Authentication** | Spec 003 | N/A | Authentication, authorisation, and tenant isolation are excluded. Idempotency keys remain globally unique for this unauthenticated scope. | Customer identity is intentionally limited to the request model for this assessment. |
+| **Request documentation** | Spec 004 | Declare DTO classes with `class-validator` decorators, the NestJS default path to a documented request body. | Convert the live zod schemas the service already validates with. | The default path means every request shape is described twice and validated once, so the document drifts the first time a bound changes. Converting the live schema makes the published `maxItems: 100` the same constant the service enforces. It also avoids installing `class-validator` and `class-transformer`, which Spec 003 had deliberately done without. |
+| **Response documentation** | Spec 004 | The same DTO classes, reused as response types. | Strict zod schemas that every integration test parses its real response through. | Responses are TypeScript interfaces, erased at runtime, so there is nothing to derive from and a second description is unavoidable. It is only acceptable because it is executed: an undocumented field and a documented-but-absent field both fail the suite. A description that is run against the thing it describes is a check rather than a copy. |
+| **Document-level 500** | Spec 004 | `DocumentBuilder.addGlobalResponse`, whose name reads as exactly this. | Not used. The statement lives in the document description, and a test asserts no operation carries a 500. | The method does the opposite of what its name suggests: it injects the response into **every** operation. That would have put an unprovokable failure on all five, and the rule that every documented failure has actually been exercised would have needed an exemption. A defect that reports success is worth a test rather than a comment, so there is both. |
+| **Reading a boolean setting** | Spec 004 | `z.coerce.boolean()` for `DOCS_ENABLED`. | `z.stringbool()`. | `coerce.boolean` applies JavaScript truthiness, and every non-empty string is truthy, so `DOCS_ENABLED=false` would parse as **true**. The page would be served in a deployment that had switched it off, with nothing in the logs to explain it. This is the second trap in this feature that reports success while being wrong, which is why `disabled.spec.ts` asserts the string `'false'` specifically. |
+| **Documentation drift** | Spec 004 | Publish the page and trust review to keep it honest. | Commit `openapi.json` and make `npm run check` regenerate and compare it. | Review does not catch a document that was correct when it was written. The gate turns drift into a failed build with a diff, on the same command that already catches a formatting or type error. |
+| **Asserting on prose** | Spec 004 | Prove a claim is documented by asserting the description contains the phrase. | Provoke every failure and compare each response against what the description promises. | The original test required `ErrorBody.details` to say "empty array otherwise". It did say that, and it was wrong — five codes carry detail, not one — so the test pinned the defect in place rather than catching it. A green suite and a 17-of-17 mutation sweep both missed it; walking the quickstart against a running service found it in one command. Asserting that a document contains a sentence proves only that someone wrote the sentence. |

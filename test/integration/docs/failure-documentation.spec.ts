@@ -140,8 +140,16 @@ describe('failures are documented exactly as they can occur', () => {
     expect(String((properties.message as JsonRecord).description)).toMatch(
       /never contains a stack trace/i,
     );
-    expect(String((properties.details as JsonRecord).description)).toMatch(
-      /empty array otherwise/i,
-    );
+    // This assertion previously required the phrase "empty array otherwise",
+    // which locked in a claim the service does not honour: five codes carry
+    // detail, not one. It now requires the description to account for each code
+    // by name, so a wrong summary cannot satisfy it the way a vague one did.
+    const details = String((properties.details as JsonRecord).description);
+    for (const code of ERROR_CODES) {
+      if (code === 'INTERNAL_ERROR') continue;
+      expect(`${code} accounted for: ${details.includes(code)}`).toBe(
+        `${code} accounted for: true`,
+      );
+    }
   });
 });

@@ -86,7 +86,7 @@ export const customerNotFoundExample = {
   code: 'CUSTOMER_NOT_FOUND',
   message: 'No customer exists with identifier 9999.',
   correlationId: '0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11',
-  details: [],
+  details: [{ field: 'customerId', message: 'No customer with identifier 9999.' }],
 };
 
 export const orderTotalNotRepresentableExample = {
@@ -101,14 +101,19 @@ export const invalidIdempotencyKeyExample = {
   message:
     'The Idempotency-Key header must be 8 to 255 characters of A-Z, a-z, 0-9, hyphen or underscore.',
   correlationId: '0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11',
-  details: [],
+  details: [
+    {
+      field: 'Idempotency-Key',
+      message: 'Use 8 to 255 characters of A-Z, a-z, 0-9, hyphen, or underscore.',
+    },
+  ],
 };
 
 export const productNotFoundExample = {
   code: 'PRODUCT_NOT_FOUND',
   message: 'No product exists with identifier 9999.',
   correlationId: '0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11',
-  details: [],
+  details: [{ field: 'lines.productId', message: 'No product with identifier 9999.' }],
 };
 
 export const orderNotFoundExample = {
@@ -136,7 +141,7 @@ export const invalidCursorExample = {
   code: 'INVALID_CURSOR',
   message: 'The cursor is malformed.',
   correlationId: '0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11',
-  details: [],
+  details: [{ field: 'cursor', message: 'Use the nextCursor value from a previous page.' }],
 };
 
 export const healthyReportExample = {

@@ -101,7 +101,9 @@ export const errorBodySchema = z.strictObject({
   correlationId: z.string().describe('Identifies this request in the service logs.'),
   details: z
     .array(errorDetailSchema)
-    .describe('Per-field problems on a validation failure, and an empty array otherwise.'),
+    .describe(
+      'Names the request fields responsible, where the failure can be attributed to one. Populated for VALIDATION_FAILED, CUSTOMER_NOT_FOUND, PRODUCT_NOT_FOUND, INVALID_CURSOR and INVALID_IDEMPOTENCY_KEY. Empty for ORDER_NOT_FOUND, TRANSITION_NOT_PERMITTED, IDEMPOTENCY_KEY_REUSED and ORDER_TOTAL_NOT_REPRESENTABLE, which concern the state of the system rather than a field you sent.',
+    ),
 });
 
 export const healthReportSchema = z.strictObject({
