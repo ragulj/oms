@@ -8,6 +8,7 @@ import { StructuredLogger } from './logging/logger';
 import { correlationMiddleware } from './http/correlation';
 import { drain } from './lifecycle/shutdown';
 import { OverlapGuard } from './scheduler/overlap-guard';
+import { DOCS_UI_PATH, mountApiDocumentation } from './docs/openapi.document';
 
 export const MINIMUM_NODE_MAJOR = 22;
 
@@ -83,6 +84,14 @@ async function bootstrap(): Promise<void> {
   // so supervisors and probes never track the API version.
   app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 
+  // Spec 004 FR-049, FR-057, FR-059. Built and mounted only when enabled, so a
+  // disabled service does not generate a document it will never serve. The docs
+  // paths need no entry in the prefix exclusion above: `useGlobalPrefix` is left
+  // unset and defaults to off, which research R3 measured rather than assumed.
+  if (config.DOCS_ENABLED) {
+    mountApiDocumentation(app);
+  }
+
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) {
@@ -133,6 +142,11 @@ async function bootstrap(): Promise<void> {
     shutdownDrainTimeoutMs: config.SHUTDOWN_DRAIN_TIMEOUT_MS,
     logLevel: config.LOG_LEVEL,
     nodeVersion: process.versions.node,
+    // Spec 004 FR-061: the address, not a boolean, so a developer never has to
+    // guess it or search for it.
+    documentation: config.DOCS_ENABLED
+      ? `http://localhost:${config.PORT}/${DOCS_UI_PATH}`
+      : 'disabled',
   });
 }
 

@@ -1,0 +1,1033 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Succeeds only when the service and every dependency are healthy. There is deliberately no\nliveness and readiness split, since the declared scope has no orchestrator to consume one.\n\nThis endpoint sits outside the versioned prefix on purpose, so a supervisor or probe never has\nto track the API version.",
+        "operationId": "checkHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The service and every dependency are healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReport"
+                },
+                "example": {
+                  "status": "healthy",
+                  "dependencies": {
+                    "database": "healthy"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one dependency is unhealthy. The body names which. This response does not use the shared error body, because health reports a state rather than rejecting a request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReport"
+                },
+                "example": {
+                  "status": "unhealthy",
+                  "dependencies": {
+                    "database": "unhealthy"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Report service and dependency health",
+        "tags": [
+          "Operations"
+        ]
+      }
+    },
+    "/api/v1/orders": {
+      "post": {
+        "description": "Captures the catalog price of every product at this moment and stores the order and all of its\nline items as one indivisible unit. Nothing you send can influence the price recorded: a request\ncarrying a price, a total, a status, an identifier or a timestamp is rejected rather than having\nthe field ignored.\n\nWithout an `Idempotency-Key` there is no replay protection, so executing this twice creates two\norders. That is the intended behaviour, not a defect: the key is the mechanism that prevents a\nduplicate, and a duplicate cannot be deleted afterwards, only cancelled.",
+        "operationId": "createOrder",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "8 to 255 characters of letters, digits, hyphen and underscore. Repeating a request with the same key returns the originally created order with status 200 instead of creating a second one. Omitting it means no replay protection.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Echoed back when well formed. A generated identifier is used when absent or malformed.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "One to 100 line items. Repeating a product across lines is permitted; each line is priced and totalled independently.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "customerId": 1,
+                    "lines": [
+                      {
+                        "productId": 1,
+                        "quantity": 3
+                      },
+                      {
+                        "productId": 2,
+                        "quantity": 1
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An idempotent replay. The body is the order created by the original request, and no second order exists. The status code is the signal, since the body is identical to the original 201.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replay": {
+                "description": "Present and set to true only on a replay.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                },
+                "example": {
+                  "id": 42,
+                  "customerId": 1,
+                  "status": "pending",
+                  "createdAtUs": 1757030400123456,
+                  "updatedAtUs": 1757030400123456,
+                  "totalMinor": 8447,
+                  "lines": [
+                    {
+                      "id": 101,
+                      "productId": 1,
+                      "productDescription": "Widget",
+                      "unitPriceMinor": 1299,
+                      "quantity": 3,
+                      "lineTotalMinor": 3897
+                    },
+                    {
+                      "id": 102,
+                      "productId": 2,
+                      "productDescription": "Gadget",
+                      "unitPriceMinor": 4550,
+                      "quantity": 1,
+                      "lineTotalMinor": 4550
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The order was created.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "Path at which the created order can be retrieved.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                },
+                "example": {
+                  "id": 42,
+                  "customerId": 1,
+                  "status": "pending",
+                  "createdAtUs": 1757030400123456,
+                  "updatedAtUs": 1757030400123456,
+                  "totalMinor": 8447,
+                  "lines": [
+                    {
+                      "id": 101,
+                      "productId": 1,
+                      "productDescription": "Widget",
+                      "unitPriceMinor": 1299,
+                      "quantity": 3,
+                      "lineTotalMinor": 3897
+                    },
+                    {
+                      "id": 102,
+                      "productId": 2,
+                      "productDescription": "Gadget",
+                      "unitPriceMinor": 4550,
+                      "quantity": 1,
+                      "lineTotalMinor": 4550
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid, or an identifier does not resolve. Nothing is written, not even the order row. Quantity must be between 1 and 1000000, and an order must carry 1 to 100 lines.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "value": {
+                      "code": "VALIDATION_FAILED",
+                      "message": "The request body is not valid.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": [
+                        {
+                          "field": "lines.0.quantity",
+                          "message": "quantity must be at least 1"
+                        }
+                      ]
+                    }
+                  },
+                  "CUSTOMER_NOT_FOUND": {
+                    "value": {
+                      "code": "CUSTOMER_NOT_FOUND",
+                      "message": "No customer exists with identifier 9999.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  },
+                  "PRODUCT_NOT_FOUND": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "No product exists with identifier 9999.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  },
+                  "ORDER_TOTAL_NOT_REPRESENTABLE": {
+                    "value": {
+                      "code": "ORDER_TOTAL_NOT_REPRESENTABLE",
+                      "message": "The order total is larger than can be represented exactly and was not rounded.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  },
+                  "INVALID_IDEMPOTENCY_KEY": {
+                    "value": {
+                      "code": "INVALID_IDEMPOTENCY_KEY",
+                      "message": "The Idempotency-Key header must be 8 to 255 characters of A-Z, a-z, 0-9, hyphen or underscore.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was used before with a different request body. Nothing is written.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "IDEMPOTENCY_KEY_REUSED": {
+                    "value": {
+                      "code": "IDEMPOTENCY_KEY_REUSED",
+                      "message": "This idempotency key was used before with a different request body.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Place an order",
+        "tags": [
+          "Orders"
+        ]
+      },
+      "get": {
+        "description": "Keyset pagination only. Read `nextCursor` from the response and pass it back unchanged to fetch\nthe next page; it is null on the final page. Passing the same cursor twice with no intervening\nwrites returns the same page.\n\nThere is no `offset` or `page` parameter, and supplying one is rejected rather than ignored:\naccepting an offset while ignoring it would let a caller believe it was paging when it was\nre-reading the first page. Changing `status` mid-traversal starts a new listing, because the\nfilter applies to the whole set and the cursor only positions within it.",
+        "operationId": "listOrders",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default and at most 100. A value outside the range is rejected, never clamped, so you never receive fewer items than you asked for without being told.",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque continuation token from a previous response. Its encoding is not part of this contract: do not decode it and do not construct one. A malformed cursor is rejected rather than treated as absent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Restrict the listing to one status.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "processing",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of orders. Returned for an empty page too.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListOrdersResponse"
+                },
+                "example": {
+                  "orders": [
+                    {
+                      "id": 42,
+                      "customerId": 1,
+                      "status": "pending",
+                      "createdAtUs": 1757030400123456,
+                      "updatedAtUs": 1757030400123456,
+                      "totalMinor": 8447,
+                      "lines": [
+                        {
+                          "id": 101,
+                          "productId": 1,
+                          "productDescription": "Widget",
+                          "unitPriceMinor": 1299,
+                          "quantity": 3,
+                          "lineTotalMinor": 3897
+                        },
+                        {
+                          "id": 102,
+                          "productId": 2,
+                          "productDescription": "Gadget",
+                          "unitPriceMinor": 4550,
+                          "quantity": 1,
+                          "lineTotalMinor": 4550
+                        }
+                      ]
+                    }
+                  ],
+                  "nextCursor": null,
+                  "limit": 50
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is out of range, unrecognised, or malformed, including the cursor.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "value": {
+                      "code": "VALIDATION_FAILED",
+                      "message": "The request body is not valid.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": [
+                        {
+                          "field": "lines.0.quantity",
+                          "message": "quantity must be at least 1"
+                        }
+                      ]
+                    }
+                  },
+                  "INVALID_CURSOR": {
+                    "value": {
+                      "code": "INVALID_CURSOR",
+                      "message": "The cursor is malformed.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List orders, newest first",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}": {
+      "get": {
+        "description": "Returns the complete order: its status, its timestamps, every line item with the price captured at placement, and the total derived from those lines.",
+        "operationId": "getOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Identifier of the order.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order exists and is returned in full, with every line item and a derived total.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                },
+                "example": {
+                  "id": 42,
+                  "customerId": 1,
+                  "status": "pending",
+                  "createdAtUs": 1757030400123456,
+                  "updatedAtUs": 1757030400123456,
+                  "totalMinor": 8447,
+                  "lines": [
+                    {
+                      "id": 101,
+                      "productId": 1,
+                      "productDescription": "Widget",
+                      "unitPriceMinor": 1299,
+                      "quantity": 3,
+                      "lineTotalMinor": 3897
+                    },
+                    {
+                      "id": 102,
+                      "productId": 2,
+                      "productDescription": "Gadget",
+                      "unitPriceMinor": 4550,
+                      "quantity": 1,
+                      "lineTotalMinor": 4550
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The identifier is not a positive integer. A non-numeric identifier is a malformed request rather than a missing resource, which is why this is 400 and not 404.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "value": {
+                      "code": "VALIDATION_FAILED",
+                      "message": "The request body is not valid.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": [
+                        {
+                          "field": "lines.0.quantity",
+                          "message": "quantity must be at least 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order exists with that identifier.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "ORDER_NOT_FOUND": {
+                    "value": {
+                      "code": "ORDER_NOT_FOUND",
+                      "message": "No order exists with identifier 9999.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Retrieve an order",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/cancel": {
+      "post": {
+        "description": "Takes no request body. This is the only status change a caller can request; promotion to\n`processing` belongs to the background job alone, and there is no operation that sets an\narbitrary status.\n\nA conflict means the order is not in a state from which cancellation is legal. It is returned\nboth when the caller was simply late and when the transition was never legal from that state,\nbecause those are the same fact and telling them apart would require a read-then-write guard\nthat this system does not use.",
+        "operationId": "cancelOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Identifier of the order to cancel.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order was pending and is now cancelled.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                },
+                "example": {
+                  "id": 42,
+                  "customerId": 1,
+                  "status": "cancelled",
+                  "createdAtUs": 1757030400123456,
+                  "updatedAtUs": 1757030400123457,
+                  "totalMinor": 8447,
+                  "lines": [
+                    {
+                      "id": 101,
+                      "productId": 1,
+                      "productDescription": "Widget",
+                      "unitPriceMinor": 1299,
+                      "quantity": 3,
+                      "lineTotalMinor": 3897
+                    },
+                    {
+                      "id": 102,
+                      "productId": 2,
+                      "productDescription": "Gadget",
+                      "unitPriceMinor": 4550,
+                      "quantity": 1,
+                      "lineTotalMinor": 4550
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The identifier is not a positive integer.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "value": {
+                      "code": "VALIDATION_FAILED",
+                      "message": "The request body is not valid.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": [
+                        {
+                          "field": "lines.0.quantity",
+                          "message": "quantity must be at least 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order exists with that identifier.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "ORDER_NOT_FOUND": {
+                    "value": {
+                      "code": "ORDER_NOT_FOUND",
+                      "message": "No order exists with identifier 9999.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order is already processing or already cancelled, so cancellation is not a legal transition from its current state.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Identifies this request in the service logs. Present on success and failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "examples": {
+                  "TRANSITION_NOT_PERMITTED": {
+                    "value": {
+                      "code": "TRANSITION_NOT_PERMITTED",
+                      "message": "Order 42 is cancelled and cannot be cancelled.",
+                      "correlationId": "0f6c8a5e-3d21-4c77-9f0e-2b6a1d4e8c11",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel a pending order",
+        "tags": [
+          "Orders"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Order Processing System API",
+    "description": "Order Processing System. Create orders, read them back, page through them, and cancel one.\n\n**Authentication.** This API requires no credentials of any kind. There is no key, token, session or\nheader to supply, and no authorisation rule about who may read or cancel whose order. That is a\ndeclared boundary of this system rather than an oversight, and no credential scheme is configured or\nplanned within this scope.\n\n**Money** is always an integer count of the minor unit of the currency, on every field whose name ends\n`Minor`. No field carries a decimal, a floating point value, or a formatted amount.\n\n**Timestamps** are always an integer count of microseconds since the Unix epoch, on every field whose\nname ends `Us`. There is deliberately no formatted or millisecond-precision rendering of an ordering\ntimestamp anywhere in this API, because that is the value a client would reach for when building its\nown pagination cursor, and it is truncated.\n\n**Cursors are opaque.** Read `nextCursor` from a response and pass it back unchanged. Its encoding is\nnot part of this contract, and a cursor a client constructs itself is not supported.\n\n**Errors** all share one body, published as the `ErrorBody` component. Its `code` is stable and\nmachine-readable; branch on that rather than on `message`. No error body contains a stack trace, a\ndriver message, a query fragment or a filesystem path.\n\n**Server errors.** A `500` response carrying the same error body is representable, as it is for any\nservice. It is documented here once rather than on each operation, because no input a caller can\nconstruct produces one, and listing an unprovokable response per operation would weaken the\nguarantee that every documented failure is a failure that has actually been exercised.\n\n**There is no operation that updates or deletes an order.** A stored order is permanent: it always\ncarries at least one line item, line items cannot be deleted, and the order cannot be removed while\na line references it. Cancellation is the answer this lifecycle offers to an unwanted order.\nThere are also no customer or product operations, and no offset-style paging parameter.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "Orders",
+      "description": "Placing, reading and cancelling orders."
+    },
+    {
+      "name": "Operations",
+      "description": "Operational endpoints, outside the versioned API prefix."
+    }
+  ],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "CreateOrderRequest": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lines": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000
+                }
+              },
+              "required": [
+                "productId",
+                "quantity"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "customerId",
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "processing",
+          "cancelled"
+        ],
+        "description": "The lifecycle state of an order. Only pending orders can be promoted or cancelled."
+      },
+      "OrderLineView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Identifier of this line item, stable across reads."
+          },
+          "productId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The product this line was placed against."
+          },
+          "productDescription": {
+            "type": "string",
+            "description": "The product description captured when the order was placed."
+          },
+          "unitPriceMinor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The catalog price at the moment of placement, in minor units. Unaffected by later catalog changes."
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many units of the product this line covers."
+          },
+          "lineTotalMinor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Unit price times quantity, in minor units. Computed by the database, never supplied by a caller.",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "productId",
+          "productDescription",
+          "unitPriceMinor",
+          "quantity",
+          "lineTotalMinor"
+        ],
+        "additionalProperties": false
+      },
+      "OrderView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Identifier of the order."
+          },
+          "customerId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The customer the order was placed for."
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "createdAtUs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "When the order was created, in microseconds since the Unix epoch."
+          },
+          "updatedAtUs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "When the order last changed, in microseconds since the Unix epoch. Never earlier than createdAtUs."
+          },
+          "totalMinor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The sum of the line totals, in minor units. Derived on read and never stored.",
+            "readOnly": true
+          },
+          "lines": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLineView"
+            },
+            "description": "Never empty, because an order and at least one line are written in one transaction. Returned in ascending line identifier, which is stable across reads."
+          }
+        },
+        "required": [
+          "id",
+          "customerId",
+          "status",
+          "createdAtUs",
+          "updatedAtUs",
+          "totalMinor",
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "ListOrdersResponse": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderView"
+            },
+            "description": "The page of orders, newest first."
+          },
+          "nextCursor": {
+            "description": "Opaque continuation token. Pass it back as the cursor parameter to fetch the next page. Null on the final page. Its encoding is not part of this contract and must not be decoded or constructed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The page size that was applied."
+          }
+        },
+        "required": [
+          "orders",
+          "nextCursor",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The request field the problem concerns."
+          },
+          "message": {
+            "type": "string",
+            "description": "What is wrong with it."
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_FAILED",
+              "CUSTOMER_NOT_FOUND",
+              "PRODUCT_NOT_FOUND",
+              "ORDER_NOT_FOUND",
+              "ORDER_TOTAL_NOT_REPRESENTABLE",
+              "INVALID_CURSOR",
+              "INVALID_IDEMPOTENCY_KEY",
+              "IDEMPOTENCY_KEY_REUSED",
+              "TRANSITION_NOT_PERMITTED",
+              "INTERNAL_ERROR"
+            ],
+            "description": "Stable and machine-readable. Branch on this rather than on the message, which is for a human and is not part of the contract."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation. Never contains a stack trace, a driver message, a query fragment or a filesystem path."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Identifies this request in the service logs."
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "description": "Per-field problems on a validation failure, and an empty array otherwise."
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "correlationId",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "HealthReport": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy"
+            ],
+            "description": "Healthy only when every dependency is."
+          },
+          "dependencies": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "healthy",
+                "unhealthy"
+              ]
+            },
+            "description": "One entry per checked dependency."
+          }
+        },
+        "required": [
+          "status",
+          "dependencies"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

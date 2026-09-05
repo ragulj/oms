@@ -15,7 +15,9 @@
     "db:migrate": "node -r ts-node/register src/database/migrate.ts",
     "db:seed": "node -r ts-node/register src/database/seed.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "check": "prettier --check . && eslint . && tsc --noEmit",
+    "openapi:export": "node -r ts-node/register scripts/export-openapi.ts",
+    "openapi:check": "node -r ts-node/register scripts/export-openapi.ts --check",
+    "check": "prettier --check . && eslint . && tsc --noEmit && npm run openapi:check",
     "fix": "prettier --write . && eslint . --fix"
   },
   "dependencies": {

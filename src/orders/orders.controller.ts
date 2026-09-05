@@ -12,7 +12,14 @@ import {
   Res,
   UseFilters,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { HttpExceptionFilter } from '../http/http-exception.filter';
+import {
+  ApiCancelOrder,
+  ApiCreateOrder,
+  ApiGetOrder,
+  ApiListOrders,
+} from '../docs/order-api.decorators';
 import type { HttpRequestLike, HttpResponseLike } from '../http/http-types';
 import { correlationIdOf } from '../http/correlation';
 import { PositiveIntPipe } from '../http/positive-int.pipe';
@@ -37,10 +44,12 @@ export const IDEMPOTENT_REPLAY_HEADER = 'Idempotent-Replay';
  */
 @Controller('orders')
 @UseFilters(HttpExceptionFilter)
+@ApiTags('Orders')
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Post()
+  @ApiCreateOrder()
   create(
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderRequest,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
@@ -66,11 +75,13 @@ export class OrdersController {
   }
 
   @Get()
+  @ApiListOrders()
   list(@Query(new ZodValidationPipe(listOrdersSchema)) query: ListOrdersQuery): ListOrdersResult {
     return this.orders.list(query);
   }
 
   @Get(':id')
+  @ApiGetOrder()
   get(@Param('id', PositiveIntPipe) id: number): OrderView {
     return this.orders.get(id);
   }
@@ -78,6 +89,7 @@ export class OrdersController {
   /** Takes no request body. The only transition a caller can ask for. */
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
+  @ApiCancelOrder()
   cancel(@Param('id', PositiveIntPipe) id: number, @Req() request: HttpRequestLike): OrderView {
     return this.orders.cancel(id, correlationIdOf(request));
   }

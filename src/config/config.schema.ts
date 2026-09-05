@@ -25,6 +25,11 @@ export const configSchema = z.object({
   // Principle III is about, not a throughput target.
   ORDER_PROMOTION_CHUNK_SIZE: positiveInt('ORDER_PROMOTION_CHUNK_SIZE').default(100),
   ORDER_PROMOTION_MAX_ITERATIONS: positiveInt('ORDER_PROMOTION_MAX_ITERATIONS').default(10),
+
+  // Spec 004 FR-057. `stringbool`, not `coerce.boolean`: the latter applies
+  // JavaScript truthiness, so DOCS_ENABLED=false would parse as true and serve
+  // documentation with nothing in the logs to explain it (research R13).
+  DOCS_ENABLED: z.stringbool().default(true),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

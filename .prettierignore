@@ -8,3 +8,4 @@ specs/
 .specify/
 .claude/
 README.md
+openapi.json

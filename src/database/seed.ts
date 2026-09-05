@@ -20,6 +20,20 @@ const SEED_PRODUCTS = [
   { name: 'Sprocket', unitPriceMinor: 99 },
 ] as const;
 
+/**
+ * Spec 004 FR-053a. The API documentation's prefilled examples name these, which
+ * is what makes a reviewer's first execution from the page succeed rather than
+ * return a missing-product error.
+ *
+ * They are the identifiers this command produces against a **fresh** database,
+ * which is the state the quickstart puts a reviewer in. Nothing here enforces
+ * that; `seed-examples.spec.ts` does, by seeding a fresh database and asserting
+ * these values, so a later change to the seed order fails a test instead of
+ * silently breaking the page.
+ */
+export const EXAMPLE_CUSTOMER_ID = 1;
+export const EXAMPLE_PRODUCT_IDS = [1, 2] as const;
+
 export interface SeedResult {
   customerIds: number[];
   productIds: number[];
