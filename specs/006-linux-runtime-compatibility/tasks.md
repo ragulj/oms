@@ -233,3 +233,55 @@ evidence recorded for FR-003.
 
 **Checkpoint**: Spec 006's assertions match observed behaviour, and the runtime floor a fresh
 checkout needs is documented.
+
+---
+
+## Phase 8: Windows test-teardown cleanup (spec US3, FR-024–FR-026, SC-006)
+
+**Purpose**: Close the previously-unverified half of SC-006. The suite has only ever been run on Linux
+after this feature's changes; a Windows-only failure deleting the shared test database has since been
+reported, so SC-006 is currently partially met.
+
+**Scope constraints (spec Assumptions, 2026-09-05)**: test cleanup only. Do **not** rename the runtime
+data directory, do **not** change production database behaviour, and do **not** touch the loader-scoped
+`ts-node` configuration. A remedy reaching for any of those has left its brief.
+
+**Standing correction**: the reported mechanism does not match the code. `degraded.connection` is
+already closed at `response-conformance.spec.ts:305`, as the first statement of the `try` — that line is
+the test's *arrangement* (it provokes the 503), not its cleanup. A fix that only moves a connection close
+into the `finally` is therefore close to a no-op. FR-025 requires the real retained resource to be found
+on the failing environment before any fix is accepted.
+
+### Diagnosis (blocking — must precede acceptance)
+
+- [ ] T031 ⛔ BLOCKED (requires Windows) Capture the failure baseline on the previously supported environment: run `npm test`, confirm `globalTeardown` fails, and record the exact error plus which of the three files `data/oms-test.db`, `data/oms-test.db-wal`, `data/oms-test.db-shm` cannot be removed by `removeTestDatabase` in `test/setup/database.ts`. This is FR-025's required evidence and the baseline the fix is judged against (FR-025, SC-006)
+- [ ] T032 ⛔ BLOCKED (requires Windows; depends on T031) Identify the specific retained resource. Bisect with `npm test -- --testPathPatterns <suite>` to the smallest set that reproduces the failure, and confirm the holder against the Jest process. Do not assume `test/integration/docs/response-conformance.spec.ts` is the culprit — its connection is already closed at line 305, so the retained handle is something else. Record the finding in [research.md](research.md) (FR-025)
+
+### Cleanup hygiene (independent of diagnosis; not acceptance on its own)
+
+- [ ] T033 [P] Route the degraded application's teardown through the harness routine in `test/integration/docs/response-conformance.spec.ts`: replace `await degraded.app.close()` in the `finally` at line 312 with `await degraded.close()`. **Keep line 305 (`degraded.connection.close()`) exactly as it is** — it is the arrangement that provokes the 503, not cleanup, and removing it breaks the test. `close()` is idempotent (`Connection.close` guards on `sqlite.open`), so the second close is safe (FR-024)
+- [ ] T034 [P] Record the FR-024 exemption at the deliberate bypass in `test/integration/shutdown.drain.spec.ts` lines 33-40: it passes `harness.app.close` into `drain()` because the teardown mechanism is the subject under test, and releases `harness.connection` separately at line 39. Add a comment stating why it bypasses `harness.close()`, satisfying the conditional carve-out — the exemption must be explained, never merely present (FR-024)
+- [ ] T035 [P] Confirm no third bypass exists. The 2026-09-05 audit found exactly two across 13 `createTestApp` call sites, the other eleven routing through `harness.close()`. Re-run `grep -rn '\.app\.close()' test/ --include=*.ts` after T033 and confirm only the documented `shutdown.drain.spec.ts` exemption remains (FR-024)
+- [ ] T036 [P] Confirm `removeTestDatabase` in `test/setup/database.ts` still performs a single `rmSync(path, { force: true })` per file, with no `maxRetries`, `retryDelay`, backoff, or retry loop added. FR-026 forbids making the suite pass by retrying deletion; note `force` only suppresses ENOENT and must not be mistaken for handling a locked file (FR-026)
+
+### Acceptance
+
+- [ ] T037 ⛔ BLOCKED (requires Windows; depends on T032, T033) Verify the acceptance condition: a complete `npm test` green on Windows, with teardown removing all three database files. Per FR-025 the presence of the code change is explicitly **not** acceptance — the suite must pass because nothing holds the file, and the resource identified in T032 must be the one released (FR-025, SC-006)
+- [ ] T038 Verify no Linux regression after T033 and T034: `npm test` returns 468 passed / 65 suites and `npm run check` exits 0 on Linux under Node 24.20.0, with no existing test's expectation modified (FR-016, SC-006)
+- [ ] T039 (depends on T037) Update the record: change SC-006's status note in [spec.md](spec.md) from "partially met" to met, naming the environment and date; and add the diagnosis to `test/integration/README.md` beside the existing Spec 006 entries, so the next reader inherits the real mechanism rather than the reported one (SC-006)
+
+### Dependencies
+
+- T031 → T032 → T037 → T039 is the critical path, and every step of it needs a Windows machine.
+- T033, T034, T035, T036 are parallel to each other and to the diagnosis; none of them closes SC-006.
+- T038 depends on T033 and T034 only, so it can run on Linux while the Windows path is still blocked.
+
+### Parallel execution example
+
+```
+T033, T034, T035, T036   # four independent files/checks, any order, no Windows needed
+T038                     # once T033 and T034 land
+```
+
+**Checkpoint**: SC-006 is met on both environments, and the mechanism on record is the one that was
+observed rather than the one that was reported.
