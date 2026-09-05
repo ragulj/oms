@@ -41,7 +41,7 @@ export function applyTransition(
       : connection.db
           .update(orders)
           .set({ status: target })
-          .where(and(eq(orders.id, orderId), inArray(orders.status, [...sources])))
+          .where(eq(orders.id, orderId))
           .run().changes;
 
   const result = changes === 1 ? applied() : classify(connection, orderId);

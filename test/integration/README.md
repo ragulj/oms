@@ -8,8 +8,9 @@ truncated timestamp, which are the failure modes these tests exist to catch.
 
 - `global-setup.ts` deletes any leftover throwaway database, then applies all migrations to a
   fresh one. Deleting first handles an interrupted earlier run.
-- `per-test.ts` clears every table in a `beforeEach` using `DELETE FROM`. SQLite has no
-  `TRUNCATE`.
+- `per-test.ts` returns every table to a known empty state in a `beforeEach`, in three ordered
+  phases. SQLite has no `TRUNCATE`, and two tables refuse row deletion outright. See
+  [Isolation works three ways](#isolation-works-three-ways-as-of-spec-003) below.
 - `global-teardown.ts` removes the database and its `-wal` and `-shm` siblings.
 - Test files run **serially** (`maxWorkers: 1`). SQLite admits one writer, so parallel workers
   sharing a database would surface lock contention as intermittent failures indistinguishable
@@ -51,24 +52,35 @@ npm run build && node dist/main.js
 Then send an interrupt. Expected: `shutdown.started` followed by `shutdown.complete` in the
 log, and a zero exit status.
 
-## Isolation works two ways as of Spec 002
+## Isolation works three ways as of Spec 003
 
 Spec 002's immutability triggers refuse row deletion on `orders` and `order_line_items`, so
 `DELETE FROM` cannot clear them. Constitution v2.1.0 restates Principle VI as the isolation
 *property* rather than the `DELETE FROM` *mechanism*, and names rebuilding as the required
 alternative where deletion is refused.
 
-| Tables | Mechanism | Why |
-| :--- | :--- | :--- |
-| `harness_probe`, `customers`, `products` | `DELETE FROM` | Row deletion still works, and the constitution requires the default wherever it does |
-| `orders`, `order_line_items` | drop and recreate | Row deletion is refused by trigger |
+Spec 003 added `idempotency_records`, which holds a foreign key into `orders`. That turned the two
+mechanisms into **three ordered phases**, and the order is not a style choice.
+
+| Phase | Tables | Mechanism | Why it sits here |
+| :--- | :--- | :--- | :--- |
+| 1 | `idempotency_records` | `DELETE FROM` | Its rows reference orders, and the drop in phase 2 is refused while they exist |
+| 2 | `order_line_items`, `orders` | drop and recreate | Row deletion is refused by trigger; child before parent on the way down |
+| 3 | `harness_probe`, `products`, `customers` | `DELETE FROM` | Phase 2 released the foreign keys pointing into products and customers, so deletion now succeeds |
+
+Two of the three use the constitution's default mechanism. Only the middle one needs the heavier
+alternative, which is what Principle VI requires.
 
 `rebuild.ts` reads the DDL back out of `sqlite_master` rather than keeping its own copy, because a
 second copy of the schema in test code is a copy that drifts, and a rebuild that drifts would
 quietly test a different shape than production runs.
 
-The rebuild runs first in `beforeEach`. Dropping the order tables is what releases the foreign key
-references into `customers` and `products`, so those can be cleared by deletion straight after.
+**Getting phase 1 wrong is expensive and the error message does not say so.** `DROP TABLE orders`
+is refused outright while any idempotency row references it, so putting the new table in the phase 3
+list, which looks natural, fails *every test that touches an order* with a foreign key error raised
+during a table drop. Nothing in that message points at cleanup ordering. Spec 003 research R6 has the
+measurement. The three lists live in `src/database/schema/index.ts` with the reason for each
+position attached, so the ordering is data rather than a comment someone can drift from.
 
 **Granularity: per test, decided by measurement.** One rebuild costs 0.569 ms. Per test that is
 about 66 ms across the run; per file it would be about 17 ms. The 49 ms difference is under one
