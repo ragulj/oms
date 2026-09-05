@@ -102,3 +102,35 @@ for exactly this reason, and the mutation confirms they are load-bearing rather 
 
 Re-run the sweep after any schema change. A guarantee whose removal leaves the suite green is a
 guarantee with no test behind it.
+
+### Spec 003: behaviour, not just schema
+
+Spec 003's guarantees live in application code rather than in DDL, so its sweep mutates `src/` and the
+idempotency migration instead of the schema alone.
+
+**11 of 11 mutations turned the suite red.**
+
+| Mutation | Guarantee it removes |
+| :--- | :--- |
+| `strict-schema` | request schemas reject unknown keys (FR-003) |
+| `expected-status` | the conditional update names its expected source status (Principle II) |
+| `classify-404` | a zero-row transition is told apart from a missing order (FR-069) |
+| `claim-outer-status` | the claim re-asserts status outside its subquery (FR-090) |
+| `chunk-limit` | the claim is bounded by a row limit (Principle III) |
+| `iteration-cap` | a tick stops at its iteration cap (FR-084) |
+| `oldest-first` | the backlog is claimed oldest first (FR-089) |
+| `total-exactness` | a derived total that is not exactly representable fails loudly (FR-025) |
+| `cursor-tiebreaker` | the cursor carries a unique tiebreaker (Principle V) |
+| `cursor-validation` | a malformed cursor is rejected rather than treated as absent (FR-050) |
+| `idempotency-unique` | duplicate creation is impossible rather than unlikely (FR-034) |
+
+Two are worth naming. `claim-outer-status` looks redundant with the subquery's own predicate, and the
+sweep is the evidence that it is not: it is what excludes an order cancelled between the subquery
+choosing it and the update reaching it. `cursor-validation` replaces a rejection with a silent restart
+at page one, which returns a plausible page rather than an error, and is the kind of defect a
+happy-path test never sees.
+
+**Do not commit while the sweep is running.** It mutates files in place and restores them at the end,
+so a commit taken mid-sweep captures a mutated file. That happened once here: commit `d046448`
+captured the `expected-status` mutation and `5706e5c` restores it. Let the sweep finish before
+touching git.

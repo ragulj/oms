@@ -201,8 +201,8 @@ confirm exactly chunk times cap orders moved and the rest did not.
 - [X] T062 Run `npm test` twice consecutively and confirm identical results, per SC-009. Depends on T061
 - [X] T063 Confirm a zero-test run still exits non-zero by running `npm test -- --testPathPatterns nonexistent`, per FR-106
 - [X] T064 Confirm `npm run db:generate` reports no pending schema changes, proving the committed migration matches the schema modules
-- [ ] T065 Run the mutation check for SC-010 from a script in the scratchpad that mutates `src/` and `drizzle/` in place and restores them, against this feature's guarantees: strict request schemas, the expected-status predicate, the outer status predicate in the claim, the iteration cap, the exactness check, the cursor tiebreaker, and the idempotency unique constraint. Each removal must turn the suite red (FR-107, SC-010). Depends on T062
-- [ ] T066 Walk every scenario in `quickstart.md` end to end against a fresh database, including `npm run db:seed` and the curl calls, and correct the document wherever reality differs. Depends on T061
+- [X] T065 Run the mutation check for SC-010 from a script in the scratchpad that mutates `src/` and `drizzle/` in place and restores them, against this feature's guarantees: strict request schemas, the expected-status predicate, the outer status predicate in the claim, the iteration cap, the exactness check, the cursor tiebreaker, and the idempotency unique constraint. Each removal must turn the suite red (FR-107, SC-010). Depends on T062
+- [X] T066 Walk every scenario in `quickstart.md` end to end against a fresh database, including `npm run db:seed` and the curl calls, and correct the document wherever reality differs. Depends on T061
 
 ---
 
