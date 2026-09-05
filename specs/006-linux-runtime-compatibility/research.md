@@ -53,6 +53,28 @@ The loader therefore emits the same module kind it does today and merely resolve
 entry point — `npm run start:dev`, `npm run db:migrate`, `npm run db:seed`, `npm run openapi:check` — and
 confirm each loads and runs. Optionally capture the pre-fix error text for the record.
 
+**Confirmation delivered (2026-09-05, Linux, Node 24.20.0) — and the leading mechanism above is wrong.**
+All four entry points load and run. But the pre-fix error text, captured as this record asked, was a
+*type* error rather than a runtime module-load failure: `TS7016: Could not find a declaration file for
+module 'drizzle-orm/sqlite-core'`. Investigating that revealed the real cause. The installed
+`drizzle-orm` was incomplete — 108 of an expected 444 `.d.ts` files were present, while all 444 `.js`,
+`.cjs` and `.d.cts` files were — so the declaration files its own `exports` map names did not exist on
+disk. The same missing declarations broke `tsc` (`npm run build` and `npm run check`) and ts-jest
+(`npm test`), which is the tell: a loader-resolution fault could not have reached three independent
+toolchains that consume the config differently.
+
+Reinstalling the package cleared all three. With the installation intact, **removing the `ts-node` block
+leaves every check green** on Node 22.22.2 and Node 24.20.0 alike — `npm run openapi:check` exits 0 and
+`npm run start:dev` reaches `service.started` without it. The block is therefore retained as deliberate
+hardening against `exports`-only dependencies, not as the remedy for a reproducible defect; spec FR-003,
+FR-023 and SC-010 were amended to match. The alternatives weighed above were weighed against a
+misdiagnosis and should not be read as still-live trade-offs.
+
+Two further environmental defects surfaced in the same run and are recorded here so the next reader does
+not re-derive them: `@nestjs/testing@12.0.1` is ESM-only, so Jest cannot load the suite below Node 24.9;
+and the HTTP test harness never bound its server, so concurrent requests raced on supertest's lazy bind.
+Neither is a Spec 006 defect. See `test/integration/README.md`.
+
 ---
 
 ## R2 — Blast radius of the loader block on the existing environment (build, check, test)

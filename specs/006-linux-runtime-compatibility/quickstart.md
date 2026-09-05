@@ -6,7 +6,9 @@ each check asserts and [research.md](research.md) for why each exists.
 
 ## Prerequisites
 
-- Node.js ≥ 22.
+- Node.js ≥ 22 to run the service; **≥ 24.9 to run the test suite** (`@nestjs/testing` is
+  ESM-only and Jest cannot `require()` an ES module below 24.9). `.nvmrc` pins the verified
+  version — run `nvm use` first. Section D below needs the higher floor; A–C do not.
 - A copy of `.env` (from `.env.example`) or the `DATABASE_PATH` environment variable set.
 
 ---
@@ -91,8 +93,13 @@ Confirm the tests actually hold the behaviour, not just describe it:
 
 - Temporarily remove the recursive `mkdir` from `createConnection` → `npm test` MUST turn red
   (`connection.directory.spec.ts` fails). Restore it.
-- Temporarily remove the `ts-node` block from `tsconfig.json` and, on Linux, run `npm run openapi:check`
-  → it MUST fail to load. Restore it.
+- ~~Temporarily remove the `ts-node` block from `tsconfig.json` and, on Linux, run
+  `npm run openapi:check` → it MUST fail to load.~~ **Withdrawn 2026-09-05.** Run on Linux for the
+  first time, this mutation does not fail: `openapi:check` exits 0 and `start:dev` reaches
+  `service.started` without the block, on Node 22.22.2 and Node 24.20.0 alike. The failure the block
+  was added for was a corrupt dependency install, not a loader fault. The block is kept as hardening
+  (FR-003) with no mutation behind it, and FR-023/SC-010 were amended to stop claiming otherwise.
+  Do not re-add this step expecting it to pass.
 
 ---
 

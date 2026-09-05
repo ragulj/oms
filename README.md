@@ -20,9 +20,14 @@ This README will act as a living document. As development progresses, I will log
 
 ## Getting Started
 
-Requires **Node 22 or newer**. That floor is derived rather than pinned: it is the highest
-minimum any direct dependency declares, and `better-sqlite3` sets it at 22, above NestJS at 20.
-The service refuses to start on anything lower rather than failing obscurely later.
+Running the service requires **Node 22 or newer**. That floor is derived rather than pinned: it is
+the highest minimum any direct dependency declares, and `better-sqlite3` sets it at 22, above NestJS
+at 20. The service refuses to start on anything lower rather than failing obscurely later.
+
+Running the **test suite** requires **Node 24.9 or newer**, a higher floor than the service itself.
+`@nestjs/testing` is ESM-only (`"type": "module"`), and Jest cannot `require()` an ES module below
+Node 24.9 — on Node 22 the suite fails to load with `Must use import to load ES Module` before any
+test runs. `.nvmrc` pins the version the suite is verified against, so `nvm use` picks it up.
 
 ```bash
 npm install

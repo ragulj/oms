@@ -65,11 +65,13 @@ rm -rf ./data && npm run start:dev
 ```
 
 Expected: `service.started` in the log, with `./data` created on the way, and a running service on the
-configured port. **Last verified on Linux: pending** (implemented and verified on Windows via
-`openapi:check`, `db:migrate` into a fresh directory, and the full suite; the Linux boot must be run on
-Linux, where the original failure lived). Removing the loader-scoped `ts-node` block from `tsconfig.json`
-makes this boot and `npm run openapi:check` fail on Linux with a module-resolution error — the SC-010
-mutation for the loader half of Spec 006.
+configured port.
+
+**Last verified on Linux: 2026-09-05, Node 24.20.0.** `start:dev` reached `service.started` with the
+data directory created on the way and the required pragmas applied (`journal_mode=WAL`,
+`foreign_keys=ON`, `busy_timeout=5000`), served a POST and GET order round-trip, and shut down cleanly
+on SIGTERM (`shutdown.complete`). The other three loader entry points were verified in the same run:
+`openapi:check`, `db:migrate` into a two-level-deep missing directory, and `db:seed` all exited 0.
 
 ## Isolation works three ways as of Spec 003
 
@@ -104,6 +106,24 @@ position attached, so the ordering is data rather than a comment someone can dri
 **Granularity: per test, decided by measurement.** One rebuild costs 0.569 ms. Per test that is
 about 66 ms across the run; per file it would be about 17 ms. The 49 ms difference is under one
 percent of a 5.96 s suite, so the stronger isolation wins on its merits. See `research.md` R8.
+
+## The HTTP harness binds its server once (Spec 006)
+
+`createLifecycleHarness` in `test/support/http-fixtures.ts` binds the Nest HTTP server with
+`listen(0)` before returning. Nest's `app.init()` alone does not bind, and supertest then binds
+lazily per request and closes the socket again when that request ends. Sequential tests never
+notice. A test issuing concurrent requests does: each call observes an unbound server, they race to
+bind it, and the losers fail with `ECONNRESET`.
+
+This was a latent defect, not a platform one — it reproduced deterministically (5 of 5 runs), and
+outside Jest entirely, against a plain `http.Server` on both Node 22 and Node 24. It surfaced during
+Spec 006 only because that was the first run of the suite on Linux, where
+`http-contract.spec.ts`'s five-concurrent-request correlation test could finally execute. The fix
+ships with Spec 006 as supporting work required by FR-016 (the full suite must pass); it changes no
+test's expectation, so it does not trip FR-016's rule that a changed expectation signals an
+unintended behaviour change.
+
+Add concurrent-request tests freely: the server stays bound for the lifetime of the harness.
 
 ## Mutation results (SC-010)
 
@@ -262,21 +282,32 @@ are the same mistake: asserting on something adjacent to the guarantee instead o
 
 Spec 006 made a clean Linux checkout runnable — a loader-scoped `ts-node` block so sources resolve on
 Linux, and `createConnection` creating the missing (gitignored) data directory instead of rejecting it.
-Its sweep has two mutations, one per fix.
+Its sweep was planned with two mutations, one per fix. **One of them turned out to have nothing behind
+it, and this record says so rather than rounding up.**
 
-**2 of 2 mutations turn the suite red** (the loader half is a Linux check, where the failure lives):
+**1 of 2 mutations turns the suite red.**
 
 | Mutation | Guarantee it removes | Caught by |
 | :--- | :--- | :--- |
 | `no-mkdir` | `createConnection` creates the missing data directory (FR-006) | `connection.directory.spec.ts` |
-| `no-ts-node-block` | the `ts-node/register` loader resolves the project's modules on Linux (FR-003) | `npm run openapi:check` / `start:dev` boot, on Linux |
+| `no-ts-node-block` | *(withdrawn — see below)* | **nothing** |
 
 `no-mkdir` is behavioural, not a compile error. Removing the `mkdirSync` *call* (not its import) would
 leave the suite green wherever the directory already exists, so `connection.directory.spec.ts` points at
 a throwaway directory that does not exist and fails with "directory does not exist" when the create is
-gone — verified red during implementation, then restored. `no-ts-node-block` cannot be shown on a
-platform that already resolves modules under classic resolution; it is recorded above under the
-un-automatable Linux boot.
+gone — verified red during implementation, then restored.
+
+`no-ts-node-block` was **withdrawn on 2026-09-05** after being run on Linux for the first time. It does
+not turn anything red. Earlier revisions of this file claimed it failed the boot and `npm run
+openapi:check` on Linux; that claim was written before the mutation had been executed there, and it is
+false. With the dependency installation intact, removing the `ts-node` block leaves `openapi:check` at
+exit 0 and `start:dev` reaching `service.started` on **both** Node 22.22.2 and Node 24.20.0.
+
+The reason is that the failure Spec 006 attributed to the loader was a corrupt `drizzle-orm` install
+missing 336 of its 444 `.d.ts` files — which is also why it broke `tsc` and ts-jest, two toolchains the
+loader configuration never touches. The block is retained as hardening against `exports`-only
+dependencies (spec FR-003) and is knowingly **not** backed by a mutation. Spec FR-023 and SC-010 were
+amended to withdraw the claim; `research.md` R1 carries the full diagnosis.
 
 ### Suite runtime (SC-012)
 
