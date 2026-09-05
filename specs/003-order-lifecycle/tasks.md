@@ -30,8 +30,8 @@ implementation they cover, and each must fail before that implementation exists.
 - [ ] T002 [P] Document both new settings, with their defaults and their combined meaning as a per-tick blocking budget, in `.env.example`
 - [ ] T003 [P] Create the `idempotency_records` table module in `src/database/schema/idempotency-records.ts`: unique `idempotency_key`, `request_fingerprint`, `order_id` foreign key to `orders` with `ON DELETE RESTRICT`, and `created_at_us` with the same integer-and-positive check the other timestamp columns use (FR-031, FR-034, FR-035)
 - [ ] T004 Extend `src/database/schema/index.ts` to re-export the new table and to replace the two isolation lists with three ordered ones, `PRE_REBUILD_TABLE_NAMES`, `REBUILT_TABLE_NAMES`, `DELETABLE_TABLE_NAMES`, each carrying the reason for its position (FR-102, research R6). Depends on T003
-- [ ] T005 Generate the migration with `npm run db:generate` and commit `drizzle/0003_*.sql`, checking that the unique constraint and the timestamp check appear as literal SQL rather than bound parameters, which is the failure mode Spec 002 hit in its R9. Depends on T003, T004
-- [ ] T006 Rewrite the `beforeEach` in `test/setup/per-test.ts` as three ordered phases: delete `PRE_REBUILD_TABLE_NAMES`, rebuild `REBUILT_TABLE_NAMES`, delete `DELETABLE_TABLE_NAMES`. Depends on T004
+- [ ] T005 Generate the migration with `npm run db:generate` and commit `drizzle/0003_*.sql`, checking that the unique constraint and the timestamp check appear as literal SQL rather than bound parameters, which is the failure mode Spec 002 hit in its R9 (FR-036). Depends on T003, T004
+- [ ] T006 Rewrite the `beforeEach` in `test/setup/per-test.ts` as three ordered phases: delete `PRE_REBUILD_TABLE_NAMES`, rebuild `REBUILT_TABLE_NAMES`, delete `DELETABLE_TABLE_NAMES` (FR-037, FR-105). Depends on T004
 - [ ] T007 Apply the migration to `./data/oms.db` with `npm run db:migrate` and confirm the new table and its index are present. Depends on T005
 
 ---
@@ -47,6 +47,7 @@ Principle I makes it a single authority for the whole system, not a component of
 - [ ] T008 [P] Implement the correlation identifier middleware in `src/http/correlation.middleware.ts`: accept a well-formed `X-Correlation-Id`, generate one with `crypto.randomUUID` otherwise, attach it to the request and echo it on the response (FR-007, research R10)
 - [ ] T009 [P] Define the error codes and the error body shape in `src/http/api-error.ts`, including the typed exception classes each endpoint throws (FR-004)
 - [ ] T010 Implement the global exception filter in `src/http/http-exception.filter.ts`: map every thrown error to the single body shape with its correlation identifier, and ensure no stack trace, driver message, SQL fragment, or path reaches a response (FR-004, FR-005, FR-006). Depends on T009
+- [ ] T010a Emit the request-failure log record from `src/http/http-exception.filter.ts`: warning level for a caller fault and error level for an unexpected one, carrying the correlation identifier, the route, and the error code, and carrying neither a full request body nor a full header set (FR-098, FR-100). Depends on T010
 - [ ] T011 [P] Implement the zod validation pipe in `src/http/zod-validation.pipe.ts`, turning a zod failure into per-field `details` on the error body (FR-002, FR-003)
 - [ ] T012 [P] Implement the positive-integer route parameter pipe in `src/http/positive-int.pipe.ts`, so a non-numeric identifier is a malformed request rather than a missing resource (FR-039)
 - [ ] T013 [P] Implement the single total derivation in `src/orders/order-total.ts`, summing stored line totals and throwing when the result is not exactly representable. This is the only place in the system that sums money (FR-024, FR-025, FR-042a, contract obligation O2)
@@ -59,6 +60,8 @@ Principle I makes it a single authority for the whole system, not a component of
 - [ ] T020 [P] Write the exhaustive state machine test in `test/integration/lifecycle/state-machine.spec.ts`, asserting the verdict for all nine ordered status pairs so a status added without declared edges fails (FR-063). Depends on T014
 - [ ] T021 [P] Write the total derivation test in `test/integration/lifecycle/order-total.spec.ts`, covering the exact boundary and the overflow that must throw rather than round (FR-025, FR-042a). Depends on T013
 - [ ] T022 [P] Write the HTTP envelope test in `test/integration/lifecycle/http-contract.spec.ts`: one error shape, a correlation identifier on success and failure, and no leaked internals (FR-004 to FR-007). Depends on T018
+
+- [ ] T022a [P] Write the observability and route-surface test in `test/integration/lifecycle/observability.spec.ts`: every rejected request produces a record at the right level, no record carries a full body or header set, every record is one parseable JSON line, order routes sit under `/api/v1` while `/health` does not, and the registered route table contains no path that accepts an arbitrary status and no customer filter (FR-001, FR-056a, FR-064, FR-098, FR-099, FR-100). Depends on T010a, T018
 
 **Checkpoint**: The authorities exist and are proven. Endpoint work can begin.
 
@@ -133,8 +136,8 @@ including across shared timestamps, and confirm both queries are index-served.
 
 - [ ] T041 [US3] Implement the opaque cursor codec in `src/orders/order-cursor.ts`, base64url over the microsecond value and identifier, decoded defensively and never through a date type
 - [ ] T042 [US3] Add the listing query contract to `src/orders/order.schemas.ts`, rejecting `offset`, `page`, and any unrecognised parameter. Depends on T027
-- [ ] T043 [US3] Implement the two-phase listing in `src/orders/orders.service.ts` with the row-value keyset predicate and the `order_id IN (...)` line fetch, never a join followed by a limit. Depends on T041, T042
-- [ ] T044 [US3] Add the `GET /orders` route in `src/orders/orders.controller.ts` returning orders, `nextCursor`, and the effective limit. Depends on T043
+- [ ] T043 [US3] Implement the two-phase listing in `src/orders/orders.service.ts` with the row-value keyset predicate and the `order_id IN (...)` line fetch, never a join followed by a limit (FR-044, FR-045). Depends on T041, T042
+- [ ] T044 [US3] Add the `GET /orders` route in `src/orders/orders.controller.ts` returning orders, `nextCursor`, and the effective limit, with `nextCursor` null on the final page (FR-051). Depends on T043
 
 **Checkpoint**: Reading scales with page size rather than table size.
 
@@ -173,14 +176,14 @@ confirm exactly chunk times cap orders moved and the rest did not.
 
 ### Tests for User Story 5
 
-- [ ] T050 [P] [US5] Boundedness in `test/integration/lifecycle/promotion.bounded.spec.ts`: 5,000 pending orders yield exactly 1,000 promoted in one tick at the defaults; a backlog under one chunk ends the tick early; an empty backlog performs one claim and ends without error (FR-084, FR-085, FR-087)
+- [ ] T050 [P] [US5] Boundedness in `test/integration/lifecycle/promotion.bounded.spec.ts`: 5,000 pending orders yield exactly 1,000 promoted in one tick at the defaults; a backlog under one chunk ends the tick early; an empty backlog performs one claim and ends without error. Ticks are invoked directly, never awaited on a wall clock (FR-084, FR-085, FR-087, FR-104)
 - [ ] T051 [P] [US5] Claim semantics in `test/integration/lifecycle/promotion.claim.spec.ts`: oldest first, cancelled orders never promoted, each chunk in its own transaction, the changed-row count uninflated by the touch trigger at 100 rows, and the claim index-served (FR-082, FR-086, FR-089, FR-090, research R2, R3)
 - [ ] T052 [P] [US5] Tick lifecycle in `test/integration/lifecycle/promotion.lifecycle.spec.ts`: overlapping ticks skipped and recorded, no tick after shutdown begins, a mid-tick failure leaving committed chunks committed, and the per-tick log record carrying iterations, promoted count, cap-reached flag, and duration (FR-091, FR-092, FR-094, FR-097)
 
 ### Implementation for User Story 5
 
-- [ ] T053 [US5] Implement the promotion task in `src/scheduler/order-promotion.task.ts`: the constitution's bounded claim built with Drizzle's `inArray` over a select subquery, one transaction per chunk, the iteration cap, the early exit on a zero-row claim, and the target status taken from the state machine. Depends on T014, T015
-- [ ] T054 [US5] Register the promotion task and drop the heartbeat from `src/scheduler/scheduler.module.ts`, keeping the `scheduler.registered` record and its `intervalMs` field so Spec 001's configurable-interval test still passes unchanged (FR-081, research R9). Depends on T053
+- [ ] T053 [US5] Implement the promotion task in `src/scheduler/order-promotion.task.ts`: the constitution's bounded claim built with Drizzle's `inArray` over a select subquery, one transaction per chunk, the iteration cap, the early exit on a zero-row claim, the target status taken from the state machine rather than written as a literal, and a directly invocable tick entry point (FR-088, FR-093). Depends on T014, T015
+- [ ] T054 [US5] Register the promotion task and drop the heartbeat from `src/scheduler/scheduler.module.ts`, keeping the `scheduler.registered` record and its `intervalMs` field so Spec 001's configurable-interval test still passes unchanged and the five-minute default is preserved (FR-080, FR-081, research R9). Depends on T053
 - [ ] T055 [US5] Delete `src/scheduler/heartbeat.task.ts`. Depends on T054
 - [ ] T056 [US5] Rewrite `test/integration/scheduler.fires.spec.ts` against the promotion task, preserving Spec 001's coverage that recurring work registers and fires rather than dropping it. Depends on T054
 - [ ] T057 [US5] Confirm `test/integration/scheduler.configurable.spec.ts` and `test/integration/scheduler.no-overlap.spec.ts` still pass untouched, and record in the file header why they needed no change. Depends on T054
@@ -198,7 +201,7 @@ confirm exactly chunk times cap orders moved and the rest did not.
 - [ ] T062 Run `npm test` twice consecutively and confirm identical results, per SC-009. Depends on T061
 - [ ] T063 Confirm a zero-test run still exits non-zero by running `npm test -- --testPathPatterns nonexistent`, per FR-106
 - [ ] T064 Confirm `npm run db:generate` reports no pending schema changes, proving the committed migration matches the schema modules
-- [ ] T065 Run the mutation check for SC-010 from a script in the scratchpad that mutates `src/` and `drizzle/` in place and restores them, against this feature's guarantees: strict request schemas, the expected-status predicate, the outer status predicate in the claim, the iteration cap, the exactness check, the cursor tiebreaker, and the idempotency unique constraint. Each removal must turn the suite red. Depends on T062
+- [ ] T065 Run the mutation check for SC-010 from a script in the scratchpad that mutates `src/` and `drizzle/` in place and restores them, against this feature's guarantees: strict request schemas, the expected-status predicate, the outer status predicate in the claim, the iteration cap, the exactness check, the cursor tiebreaker, and the idempotency unique constraint. Each removal must turn the suite red (FR-107, SC-010). Depends on T062
 - [ ] T066 Walk every scenario in `quickstart.md` end to end against a fresh database, including `npm run db:seed` and the curl calls, and correct the document wherever reality differs. Depends on T061
 
 ---
