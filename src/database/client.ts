@@ -1,5 +1,5 @@
 import { dirname } from 'node:path';
-import { existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
@@ -31,9 +31,18 @@ export function applyPragmas(sqlite: Database.Database): void {
 }
 
 export function createConnection(databasePath: string): Connection {
-  const directory = dirname(databasePath);
-  if (databasePath !== ':memory:' && !existsSync(directory)) {
-    throw new DatabaseUnavailableError(databasePath, `directory ${directory} does not exist`);
+  // Ensure the directory holding the database file exists before opening it. A
+  // fresh checkout has no such directory (it is gitignored), so creating it here
+  // rather than rejecting a missing one is what lets the service start on a
+  // clean checkout without a manual mkdir. Recursive create is idempotent; a
+  // genuine failure (permission denial, or a file where the directory must be)
+  // surfaces as the same DatabaseUnavailableError a bad path already produces.
+  if (databasePath !== ':memory:') {
+    try {
+      mkdirSync(dirname(databasePath), { recursive: true });
+    } catch (cause) {
+      throw new DatabaseUnavailableError(databasePath, cause);
+    }
   }
 
   let sqlite: Database.Database;

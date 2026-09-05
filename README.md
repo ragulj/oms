@@ -73,6 +73,12 @@ exits non-zero naming the offender.
 `SHUTDOWN_DRAIN_TIMEOUT_MS` default to 3000, `info`, five minutes, and ten seconds.
 `DOCS_ENABLED` defaults to true.
 
+`DATABASE_PATH` may be absolute or relative; a relative path resolves against the process working
+directory. The directory it names is created on startup if it does not already exist (including any
+missing parents), so a fresh checkout runs without a manual `mkdir` — the default `./data` is created
+on the first `db:migrate` or `start:dev`. Set it to `:memory:` for an ephemeral database that touches
+no disk and creates no directory.
+
 ### The API documentation
 
 | Address | What it serves |
@@ -140,4 +146,5 @@ Where I overrode the AI's first instinct, and why.
 | **Database Error Classification** | Spec 003 | N/A | SQLite and `better-sqlite3` error classification remain implementation-specific. | The current persistence engine is intentionally SQLite, so a database adapter abstraction is deferred. |
 | **Internal Failure Observability** | Spec 003 | N/A | Clients receive only a generic `INTERNAL_ERROR` response and correlation ID. Production centralised logging, alerting, audit, and error monitoring are deferred. | Internal details remain in structured application logs. Health reports dependency availability rather than exposing exception details. |
 | **Customer Authentication** | Spec 003 | N/A | Authentication, authorisation, and tenant isolation are excluded. Idempotency keys remain globally unique for this unauthenticated scope. | Customer identity is intentionally limited to the request model for this assessment. |
+| **Linux Runtime** | Spec 006 | Assume the development OS; require the data directory to pre-exist, and let the `ts-node/register` loader read the module system from the build config. | A loader-scoped `ts-node` block (`module`/`moduleResolution: nodenext`) so sources run on Linux, and `createConnection` creates the missing data directory instead of rejecting it. | A clean Linux checkout failed to start two ways: the loader could not resolve `exports`-mapped packages under the build's classic `moduleResolution`, and the gitignored data directory did not exist. Both are startup-path fixes; no domain behaviour changed, and the compiled build is untouched because `tsc` ignores the `ts-node` key. |
 

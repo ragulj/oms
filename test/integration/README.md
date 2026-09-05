@@ -16,7 +16,7 @@ truncated timestamp, which are the failure modes these tests exist to catch.
   sharing a database would surface lock contention as intermittent failures indistinguishable
   from real defects.
 
-## Two checks that cannot be automated from inside the suite
+## Three checks that cannot be automated from inside the suite
 
 Both are documented here rather than faked, because a test that pretends to cover them would
 be worse than an honest gap.
@@ -51,6 +51,25 @@ npm run build && node dist/main.js
 
 Then send an interrupt. Expected: `shutdown.started` followed by `shutdown.complete` in the
 log, and a zero exit status.
+
+### 3. Source-loader boot on Linux (Spec 006 FR-021, SC-010)
+
+The suite runs under ts-jest, which transforms sources with its own compiler. It does **not** exercise
+the `-r ts-node/register` loader that `start:dev`, `db:migrate`, `db:seed`, and `openapi:export/check`
+use, so the suite passing on Linux proves the code assembles there, not that the loader boots. One
+automated gate does exercise the loader: `npm run openapi:check` runs through `ts-node/register` and is
+part of `npm run check`. The full HTTP boot is verified manually on the target platform:
+
+```bash
+rm -rf ./data && npm run start:dev
+```
+
+Expected: `service.started` in the log, with `./data` created on the way, and a running service on the
+configured port. **Last verified on Linux: pending** (implemented and verified on Windows via
+`openapi:check`, `db:migrate` into a fresh directory, and the full suite; the Linux boot must be run on
+Linux, where the original failure lived). Removing the loader-scoped `ts-node` block from `tsconfig.json`
+makes this boot and `npm run openapi:check` fail on Linux with a module-resolution error — the SC-010
+mutation for the loader half of Spec 006.
 
 ## Isolation works three ways as of Spec 003
 
@@ -238,6 +257,26 @@ defect and against the fix.
 That is the same lesson Spec 004 learned from the other direction, where a test asserted that a
 document contained a sentence rather than that the service behaved the way the sentence claimed. Both
 are the same mistake: asserting on something adjacent to the guarantee instead of on the guarantee.
+
+### Spec 006: two startup-path guarantees
+
+Spec 006 made a clean Linux checkout runnable — a loader-scoped `ts-node` block so sources resolve on
+Linux, and `createConnection` creating the missing (gitignored) data directory instead of rejecting it.
+Its sweep has two mutations, one per fix.
+
+**2 of 2 mutations turn the suite red** (the loader half is a Linux check, where the failure lives):
+
+| Mutation | Guarantee it removes | Caught by |
+| :--- | :--- | :--- |
+| `no-mkdir` | `createConnection` creates the missing data directory (FR-006) | `connection.directory.spec.ts` |
+| `no-ts-node-block` | the `ts-node/register` loader resolves the project's modules on Linux (FR-003) | `npm run openapi:check` / `start:dev` boot, on Linux |
+
+`no-mkdir` is behavioural, not a compile error. Removing the `mkdirSync` *call* (not its import) would
+leave the suite green wherever the directory already exists, so `connection.directory.spec.ts` points at
+a throwaway directory that does not exist and fails with "directory does not exist" when the create is
+gone — verified red during implementation, then restored. `no-ts-node-block` cannot be shown on a
+platform that already resolves modules under classic resolution; it is recorded above under the
+un-automatable Linux boot.
 
 ### Suite runtime (SC-012)
 
